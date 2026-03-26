@@ -1,0 +1,92 @@
+name: Bug Report
+description: Report a bug in the OpenTelekomCloud Node Driver Extension
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+        Please fill in as much detail as possible.
+
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension Version
+      description: Version of the opentelekomcloud-node-driver-extension
+      placeholder: e.g. 1.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: rancher-version
+    attributes:
+      label: Rancher Version
+      description: Version of Rancher Dashboard where the extension is installed
+      placeholder: e.g. 2.9.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior
+      value: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / Logs
+      description: If applicable, add screenshots or browser console logs
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of the extension is affected?
+      options:
+        - Cloud Credentials
+        - Machine Configuration
+        - Cluster Provisioning
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any other relevant information (browser, OS, OTC region, etc.)
+    validations:
+      required: false
