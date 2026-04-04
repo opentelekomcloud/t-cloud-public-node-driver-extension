@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in the OpenTelekomCloud Node Driver Extension
+description: Report a bug in the T-Cloud-Public Node Driver Extension
 labels: ["bug"]
 body:
   - type: markdown
@@ -12,7 +12,7 @@ body:
     id: extension-version
     attributes:
       label: Extension Version
-      description: Version of the opentelekomcloud-node-driver-extension
+      description: Version of the t-cloud-public-node-driver-extension
       placeholder: e.g. 1.2.0
     validations:
       required: true

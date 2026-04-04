@@ -9,7 +9,7 @@ driver:
         password: Password
         username: Username
         domainName: Domain Name
-        endpoint: OpenTelekomCloud Authentication URL
+        endpoint: T-Cloud-Public Authentication URL
         projectName: Project Name
         region: Region
       placeholders:
