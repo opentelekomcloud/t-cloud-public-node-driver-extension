@@ -2,10 +2,10 @@
   "name": "opentelekomcloud",
   "version": "1.0.0",
   "private": false,
-  "description": "Rancher UI Extension for the T-Cloud-Public node driver (RKE2)",
+  "description": "Rancher UI Extension for the T Cloud Public node driver (RKE2)",
   "rancher": {
     "annotations": {
-      "catalog.cattle.io/display-name": "T-Cloud-Public Node Driver",
+      "catalog.cattle.io/display-name": "T Cloud Public Node Driver",
       "catalog.cattle.io/ui-extensions-version": ">= 1.1.0"
     }
   },

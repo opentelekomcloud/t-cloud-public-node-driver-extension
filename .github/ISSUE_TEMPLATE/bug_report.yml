@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in the T-Cloud-Public Node Driver Extension
+description: Report a bug in the T Cloud Public Node Driver Extension
 labels: ["bug"]
 body:
   - type: markdown

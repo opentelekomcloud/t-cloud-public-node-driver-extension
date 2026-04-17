@@ -1,6 +1,6 @@
-# T-Cloud-Public Node Driver Extension for Rancher
+# T Cloud Public Node Driver Extension for Rancher
 
-This repository contains a **Rancher UI Extension** that integrates the **T-Cloud-Public machine driver** into Rancher (RKE2).  
+This repository contains a **Rancher UI Extension** that integrates the **T Cloud Public machine driver** into Rancher (RKE2).  
 It provides a complete UI for configuring OTC machines, managing cloud credentials, and provisioning RKE2 clusters using OTC instances.
 
 This extension replaces the legacy node-driver UI and implements Rancher's new **UI Extensions Framework** (v3+).
