@@ -4,10 +4,10 @@ interface SelectOption {
 }
 
 interface OptionsList {
-  options:  SelectOption[];
+  options: SelectOption[];
   selected: unknown;
-  busy:     boolean;
-  enabled:  boolean;
+  busy: boolean;
+  enabled: boolean;
 }
 
 function addCreateNewOption(list: OptionsList, label: string, sentinel: string): void {
