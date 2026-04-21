@@ -1,6 +1,6 @@
 {
   "name": "opentelekomcloud",
-  "description": "OpenTelekomCloud node driver extension plugin",
+  "description": "T Cloud Public node driver extension plugin",
   "version": "1.0.0",
   "private": false,
   "icon": "https://raw.githubusercontent.com/opentelekomcloud/opentelekomcloud-node-driver-extension/main/pkg/opentelekomcloud/assets/icon-opentelekomcloud.svg",
