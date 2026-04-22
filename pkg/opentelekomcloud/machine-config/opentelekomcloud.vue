@@ -8,7 +8,15 @@ import { NORMAN, SECRET } from '@shell/config/types';
 import { stringify } from '@shell/utils/error';
 import { _VIEW } from '@shell/config/query-params';
 import FileSelector from '../components/FileSelector';
+import CreateNetworkResourceForm from '../components/CreateNetworkResourceForm';
 import { OpenTelekomCloud } from '../opentelekomcloud.ts';
+import {
+  CREATE_NEW_NETWORK,
+  addCreateNewOption,
+  cancelCreate,
+  selectByName,
+  gatewayFromCidr,
+} from '../helpers/networkResourceOptions';
 
 function initOptions() {
   return {
@@ -21,7 +29,7 @@ function initOptions() {
 
 export default {
   components: {
-    Banner, FileSelector, Loading, LabeledInput, LabeledSelect
+    Banner, CreateNetworkResourceForm, FileSelector, Loading, LabeledInput, LabeledSelect
   },
 
   mixins: [CreateEditView],
@@ -138,7 +146,9 @@ export default {
       otc.getKeyPairs(this.keyPairs, this.value?.keypairName);
       otc.getSecurityGroups(this.securityGroups, this.value?.secGroups);
       otc.getFloatingIpPools(this.floatingIpPools, this.value?.floatingipPool);
-      otc.getVpcs(this.vpcs, this.value?.vpcName);
+      otc.getVpcs(this.vpcs, this.value?.vpcName).then(() => {
+        addCreateNewOption(this.vpcs, 'VPC', CREATE_NEW_NETWORK.VPC);
+      });
       if (this.value?.vpcId) {
         otc.getSubnets(this.subnets, this.value.vpcId);
       }
@@ -173,6 +183,10 @@ export default {
       filename:            this.value?.privateKeyFile ? 'Private Key Provided' : '',
       privateKeyFieldType: 'password',
       errors:              null,
+      creatingVpc:         false,
+      createVpcError:      null,
+      creatingSubnet:      false,
+      createSubnetError:   null,
     };
   },
 
@@ -181,16 +195,36 @@ export default {
       this.$fetch();
     },
     'vpcs.selected'(newVpc) {
+      if (newVpc === CREATE_NEW_NETWORK.VPC) {
+        this.creatingVpc = true;
+
+        return;
+      }
+
+      this.creatingVpc = false;
+      this.createVpcError = null;
+
       if (newVpc && newVpc.id && this.otc) {
-        // Enable subnets and load them for the selected VPC
         this.subnets.enabled = true;
-        this.otc.getSubnets(this.subnets, newVpc.id);
+        this.otc.getSubnets(this.subnets, newVpc.id).then(() => {
+          addCreateNewOption(this.subnets, 'Subnet', CREATE_NEW_NETWORK.SUBNET);
+        });
       } else {
         // No VPC selected: clear and disable subnets
         this.subnets.enabled = false;
         this.subnets.options = [];
         this.subnets.selected = null;
       }
+    },
+    'subnets.selected'(newSubnet) {
+      if (newSubnet === CREATE_NEW_NETWORK.SUBNET) {
+        this.creatingSubnet = true;
+
+        return;
+      }
+
+      this.creatingSubnet = false;
+      this.createSubnetError = null;
     },
   },
 
@@ -269,7 +303,57 @@ export default {
 
     test() {
       this.syncValue();
-    }
+    },
+
+    async handleCreateVpc({ name, cidr }) {
+      this.createVpcError = null;
+      this.vpcs.busy = true;
+
+      try {
+        await this.otc.createVPC(name, cidr);
+        await this.otc.getVpcs(this.vpcs, name);
+        addCreateNewOption(this.vpcs, 'VPC', CREATE_NEW_NETWORK.VPC);
+        selectByName(this.vpcs, name);
+        this.creatingVpc = false;
+      } catch (e) {
+        this.createVpcError = e instanceof Error ? e.message : 'Failed to create VPC';
+      } finally {
+        this.vpcs.busy = false;
+      }
+    },
+
+    cancelCreateVpc() {
+      this.creatingVpc = false;
+      this.createVpcError = null;
+      cancelCreate(this.vpcs, CREATE_NEW_NETWORK.VPC);
+    },
+
+    async handleCreateSubnet({ name, cidr }) {
+      if (!this.vpcs.selected?.id) {
+        return;
+      }
+
+      this.createSubnetError = null;
+      this.subnets.busy = true;
+
+      try {
+        await this.otc.createSubnet(this.vpcs.selected.id, name, cidr, gatewayFromCidr(cidr));
+        await this.otc.getSubnets(this.subnets, this.vpcs.selected.id, name);
+        addCreateNewOption(this.subnets, 'Subnet', CREATE_NEW_NETWORK.SUBNET);
+        selectByName(this.subnets, name);
+        this.creatingSubnet = false;
+      } catch (e) {
+        this.createSubnetError = e instanceof Error ? e.message : 'Failed to create Subnet';
+      } finally {
+        this.subnets.busy = false;
+      }
+    },
+
+    cancelCreateSubnet() {
+      this.creatingSubnet = false;
+      this.createSubnetError = null;
+      cancelCreate(this.subnets, CREATE_NEW_NETWORK.SUBNET);
+    },
   }
 };
 </script>
@@ -406,7 +490,7 @@ export default {
             v-model:value="vpcs.selected"
             label="VPCs"
             :options="vpcs.options"
-            :disabled="!vpcs.enabled || busy"
+            :disabled="!vpcs.enabled || busy || creatingVpc"
             :loading="vpcs.busy"
             :searchable="false"
           />
@@ -416,12 +500,30 @@ export default {
             v-model:value="subnets.selected"
             label="Subnets"
             :options="subnets.options"
-            :disabled="!subnets.enabled || busy"
+            :disabled="!subnets.enabled || busy || creatingSubnet"
             :loading="subnets.busy"
             :searchable="false"
           />
         </div>
       </div>
+      <CreateNetworkResourceForm
+        v-if="creatingVpc"
+        resource-label="VPC"
+        default-cidr="192.168.0.0/16"
+        :busy="vpcs.busy"
+        :error="createVpcError"
+        @submit="handleCreateVpc"
+        @cancel="cancelCreateVpc"
+      />
+      <CreateNetworkResourceForm
+        v-if="creatingSubnet"
+        resource-label="Subnet"
+        default-cidr="192.168.0.0/24"
+        :busy="subnets.busy"
+        :error="createSubnetError"
+        @submit="handleCreateSubnet"
+        @cancel="cancelCreateSubnet"
+      />
       <div class="row mt-10">
         <div class="col span-6">
           <LabeledInput

@@ -206,10 +206,8 @@ export class OpenTelekomCloud {
   }
 
   public async getImageOptions(value: any, api: string, field: string, mapper?: Function, initial?: string) {
-    // We are fetching the data for the options
     value.busy = true;
     value.enabled = true;
-    value.selected = '';
 
     const query = [
       'visibility=public',
@@ -229,9 +227,10 @@ export class OpenTelekomCloud {
 
       value.options = this.convertToOptions(list);
       value.busy = false;
+      value.selected = null;
 
       if (initial) {
-        const found = value.options.find((option: any) => option.value.name === initial);
+        const found = value.options.find((option: any) => option.value?.name === initial);
 
         if (found) {
           value.selected = found.value;
@@ -250,10 +249,8 @@ export class OpenTelekomCloud {
   }
 
   public async getComputeOptions(value: any, api: string, field: string, mapper?: Function, initial?: string) {
-    // We are fetching the data for the options
     value.busy = true;
     value.enabled = true;
-    value.selected = '';
 
     const res = await this.makeComputeRequest(api);
 
@@ -266,9 +263,10 @@ export class OpenTelekomCloud {
 
       value.options = this.convertToOptions(list);
       value.busy = false;
+      value.selected = null;
 
       if (initial) {
-        const found = value.options.find((option: any) => option.value.name === initial);
+        const found = value.options.find((option: any) => option.value?.name === initial);
 
         if (found) {
           value.selected = found.value;
@@ -287,10 +285,8 @@ export class OpenTelekomCloud {
   }
 
   public async getVpcOptions(value: any, api: string, field: string, mapper?: Function, initial?: string) {
-    // We are fetching the data for the options
     value.busy = true;
     value.enabled = true;
-    value.selected = '';
 
     const res = await this.makeVpcRequest(api);
 
@@ -303,9 +299,10 @@ export class OpenTelekomCloud {
 
       value.options = this.convertToOptions(list);
       value.busy = false;
+      value.selected = null;
 
       if (initial) {
-        const found = value.options.find((option: any) => option.value.name === initial);
+        const found = value.options.find((option: any) => option.value?.name === initial);
 
         if (found) {
           value.selected = found.value;
@@ -369,12 +366,18 @@ export class OpenTelekomCloud {
     };
 
     try {
-      return await this.$dispatch('management/request', {
+      const opts: any = {
         url,
         headers,
         method,
         redirectUnauthorized: false,
-      }, { root: true });
+      };
+
+      if (body) {
+        opts.data = body;
+      }
+
+      return await this.$dispatch('management/request', opts, { root: true });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error(e);
@@ -450,28 +453,23 @@ export class OpenTelekomCloud {
   /**
    * Wait until VPC is available (status === 'OK').
    */
-  public async waitForVPCUp(vpcId: string, endTime?: number): Promise<void> {
-    const timeoutMs = 10 * 1000;
+  public async waitForVPCUp(vpcId: string): Promise<void> {
+    const timeoutMs = 30 * 1000;
+    const interval = 1000;
+    const endTime = Date.now() + timeoutMs;
 
-    if (!endTime) {
-      endTime = Date.now() + timeoutMs;
+    while (Date.now() < endTime) {
+      const res = await this.makeVpcRequest(`/vpcs/${ vpcId }`);
+      const status = (res as any)?.vpc?.status;
+
+      if (status === 'OK') {
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, interval));
     }
 
-    if (Date.now() > endTime) {
-      throw new Error('Timeout reached while waiting for VPC to become OK');
-    }
-
-    const res = await this.makeVpcRequest(`/vpcs/${ vpcId }`);
-
-    const status = (res as any)?.vpc?.status;
-
-    if (status === 'OK') {
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    return this.waitForVPCUp(vpcId, endTime);
+    throw new Error('Timeout reached while waiting for VPC to become OK');
   }
 
   /**
@@ -506,28 +504,23 @@ export class OpenTelekomCloud {
   /**
    * Wait until subnet reaches status ACTIVE.
    */
-  public async waitForSubnetUp(subnetId: string, endTime?: number): Promise<void> {
-    const timeoutMs = 10 * 1000;
+  public async waitForSubnetUp(subnetId: string): Promise<void> {
+    const timeoutMs = 30 * 1000;
+    const interval = 1000;
+    const endTime = Date.now() + timeoutMs;
 
-    if (!endTime) {
-      endTime = Date.now() + timeoutMs;
+    while (Date.now() < endTime) {
+      const res = await this.makeVpcRequest(`/subnets/${ subnetId }`);
+      const status = (res as any)?.subnet?.status;
+
+      if (status === 'ACTIVE') {
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, interval));
     }
 
-    if (Date.now() > endTime) {
-      throw new Error('Timeout reached while waiting for Subnet to become ACTIVE');
-    }
-
-    const res = await this.makeVpcRequest(`/subnets/${ subnetId }`);
-
-    const status = (res as any)?.subnet?.status;
-
-    if (status === 'ACTIVE') {
-      return;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    return this.waitForSubnetUp(subnetId, endTime);
+    throw new Error('Timeout reached while waiting for Subnet to become ACTIVE');
   }
 
   /**
