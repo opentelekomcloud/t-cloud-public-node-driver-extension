@@ -271,7 +271,7 @@ export default {
         if (res.error._status === 502 && !this.hostInAllowList()) {
           this.errorAllowHost = true;
         } else if (res.error._status === 502) {
-          this.error = this.t?.('driver.opentelekomcloud.auth.errors.badGateway') || 'Bad gateway when talking to OTC IAM';
+          this.error = this.t?.('driver.opentelekomcloud.auth.errors.badGateway') || 'Bad gateway when talking to T-Cloud IAM';
         } else if (res.error._status === 401) {
           this.error = this.t?.('driver.opentelekomcloud.auth.errors.unauthorized') || 'Unauthorized – check username/password/domain';
         } else {
