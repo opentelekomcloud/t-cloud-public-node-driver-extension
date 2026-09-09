@@ -63,6 +63,16 @@ export default {
     provider: {
       type:     String,
       required: true,
+    },
+
+    machinePools: {
+      type:    Array,
+      default: () => [],
+    },
+
+    poolId: {
+      type:    String,
+      default: '',
     }
   },
 
@@ -76,6 +86,10 @@ export default {
       this.initForViewMode();
 
       return;
+    }
+
+    if (this.sharedNetworkRequired) {
+      this.applySharedNetworkConfig();
     }
 
     try {
@@ -134,7 +148,7 @@ export default {
         this.authenticating = false;
         this.$emit('validationChanged', false);
 
-        this.errors.push('Unable to authenticate with the OpenTelekomCloud server');
+        this.errors.push('Unable to authenticate with the T-Cloud server');
 
         return;
       }
@@ -144,14 +158,17 @@ export default {
       otc.getFlavors(this.flavors, this.value?.flavorName);
       otc.getImages(this.images, this.value?.imageName);
       otc.getKeyPairs(this.keyPairs, this.value?.keypairName);
-      otc.getSecurityGroups(this.securityGroups, this.value?.secGroups);
+      const sharedConfig = this.sharedNetworkConfig;
+      const securityGroup = this.value?.secGroups || sharedConfig?.secGroups;
+      const vpc = this.value?.vpcId || this.value?.vpcName || sharedConfig?.vpcId || sharedConfig?.vpcName;
+
+      this.initialSubnet = this.value?.subnetId || this.value?.subnetName || sharedConfig?.subnetId || sharedConfig?.subnetName;
+
+      otc.getSecurityGroups(this.securityGroups, securityGroup);
       otc.getFloatingIpPools(this.floatingIpPools, this.value?.floatingipPool);
-      otc.getVpcs(this.vpcs, this.value?.vpcName).then(() => {
+      otc.getVpcs(this.vpcs, vpc).then(() => {
         addCreateNewOption(this.vpcs, 'VPC', CREATE_NEW_NETWORK.VPC);
       });
-      if (this.value?.vpcId) {
-        otc.getSubnets(this.subnets, this.value.vpcId);
-      }
       otc.getAvailabilityZones(this.availabilityZones, this.value?.availabilityZone);
     });
 
@@ -187,7 +204,39 @@ export default {
       createVpcError:      null,
       creatingSubnet:      false,
       createSubnetError:   null,
+      initialSubnet:       null,
     };
+  },
+
+  computed: {
+    activeMachinePools() {
+      return this.machinePools.filter((entry) => !entry.remove && Number(entry.pool?.quantity || 0) > 0);
+    },
+
+    sharedNetworkRequired() {
+      return this.activeMachinePools.reduce((total, entry) => total + Number(entry.pool?.quantity || 0), 0) > 1;
+    },
+
+    sharedNetworkConfig() {
+      const entry = this.activeMachinePools.find((pool) => {
+        const config = pool.config;
+
+        return pool.id !== this.poolId && config?.vpcId && config?.subnetId && config?.secGroups;
+      });
+
+      return entry?.config || null;
+    },
+
+    sharedNetworkMismatch() {
+      if (!this.sharedNetworkRequired) {
+        return false;
+      }
+
+      const configs = this.activeMachinePools.map((entry) => entry.config).filter((config) => config?.vpcId && config?.subnetId && config?.secGroups);
+      const networks = new Set(configs.map((config) => `${ config.vpcId }/${ config.subnetId }/${ config.secGroups }`));
+
+      return networks.size > 1;
+    },
   },
 
   watch: {
@@ -205,8 +254,11 @@ export default {
       this.createVpcError = null;
 
       if (newVpc && newVpc.id && this.otc) {
+        this.value.vpcName = newVpc.name;
+        this.value.vpcId = newVpc.id;
         this.subnets.enabled = true;
-        this.otc.getSubnets(this.subnets, newVpc.id).then(() => {
+        this.otc.getSubnets(this.subnets, newVpc.id, this.initialSubnet).then(() => {
+          this.initialSubnet = null;
           addCreateNewOption(this.subnets, 'Subnet', CREATE_NEW_NETWORK.SUBNET);
         });
       } else {
@@ -225,11 +277,65 @@ export default {
 
       this.creatingSubnet = false;
       this.createSubnetError = null;
+
+      if (newSubnet?.id) {
+        this.value.subnetName = newSubnet.name;
+        this.value.subnetId = newSubnet.id;
+      }
+    },
+    'securityGroups.selected'(newSecurityGroup) {
+      if (newSecurityGroup?.name) {
+        this.value.secGroups = newSecurityGroup.name;
+      }
+    },
+    sharedNetworkRequired(required) {
+      if (required) {
+        this.applySharedNetworkConfig();
+      }
     },
   },
 
   methods: {
     stringify,
+
+    applySharedNetworkConfig() {
+      const config = this.sharedNetworkConfig;
+
+      this.activeMachinePools.forEach((entry) => {
+        if (entry.config) {
+          entry.config.networkScope = 'shared';
+          entry.config.skipDefaultSg = true;
+        }
+      });
+
+      if (!config) {
+        return;
+      }
+
+      this.value.vpcName ||= config.vpcName;
+      this.value.vpcId ||= config.vpcId;
+      this.value.subnetName ||= config.subnetName;
+      this.value.subnetId ||= config.subnetId;
+      this.value.secGroups ||= config.secGroups;
+    },
+
+    validateNetwork() {
+      if (!this.sharedNetworkRequired) {
+        return [];
+      }
+
+      const errors = [];
+      const incompletePool = this.activeMachinePools.some((entry) => !entry.config?.vpcId || !entry.config?.subnetId || !entry.config?.secGroups);
+
+      if (incompletePool) {
+        errors.push('Every active machine pool must select a shared VPC, subnet, and security group.');
+      }
+      if (this.sharedNetworkMismatch) {
+        errors.push('All machine pools must use the same VPC, subnet, and security group.');
+      }
+
+      return errors;
+    },
 
     initForViewMode() {
       this.fakeSelectOptions(this.flavors, this.value?.flavorName);
@@ -290,9 +396,15 @@ export default {
       this.value.vpcName = this.vpcs.selected?.name;
       this.value.vpcId = this.vpcs.selected?.id;
       this.value.subnetName = this.subnets.selected?.name;
+      this.value.subnetId = this.subnets.selected?.id;
       this.value.secGroups = this.securityGroups.selected?.name;
       this.value.sshUser = this.sshUser;
       this.value.privateKeyFile = this.privateKeyFile;
+
+      if (this.sharedNetworkRequired) {
+        this.value.networkScope = 'shared';
+        this.value.skipDefaultSg = true;
+      }
 
       // Not configurable
       this.value.endpointType = 'publicURL';
@@ -303,6 +415,12 @@ export default {
 
     test() {
       this.syncValue();
+
+      const errors = this.validateNetwork();
+
+      this.$emit('validationChanged', errors.length === 0);
+
+      return errors.length ? { errors } : true;
     },
 
     async handleCreateVpc({ name, cidr }) {
@@ -376,9 +494,23 @@ export default {
       </div>
     </div>
     <div>
+      <Banner
+        v-if="sharedNetworkRequired"
+        color="info"
+      >
+        This cluster has multiple nodes or machine pools. Every pool must use
+        the same VPC, subnet, and security group.
+      </Banner>
+      <Banner
+        v-if="sharedNetworkMismatch"
+        color="error"
+      >
+        The machine pools use different networks. Select the same VPC, subnet,
+        and security group for every pool.
+      </Banner>
       <div class="opentelekomcloud-config">
         <div class="title">
-          OpenTelekomCloud Configuration
+          T-Cloud (former OpenTelekomCloud) Configuration
         </div>
         <div
           v-if="authenticating"
@@ -386,7 +518,7 @@ export default {
         >
           <i class="icon-spinner icon-spin icon-lg" />
           <span>
-            Authenticating with the OpenTelekomCloud server ...
+            Authenticating with the T-Cloud server ...
           </span>
         </div>
       </div>

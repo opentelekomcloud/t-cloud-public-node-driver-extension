@@ -230,7 +230,7 @@ export class OpenTelekomCloud {
       value.selected = null;
 
       if (initial) {
-        const found = value.options.find((option: any) => option.value?.name === initial);
+        const found = value.options.find((option: any) => option.value?.name === initial || option.value?.id === initial);
 
         if (found) {
           value.selected = found.value;
@@ -266,7 +266,7 @@ export class OpenTelekomCloud {
       value.selected = null;
 
       if (initial) {
-        const found = value.options.find((option: any) => option.value?.name === initial);
+        const found = value.options.find((option: any) => option.value?.name === initial || option.value?.id === initial);
 
         if (found) {
           value.selected = found.value;
@@ -302,7 +302,7 @@ export class OpenTelekomCloud {
       value.selected = null;
 
       if (initial) {
-        const found = value.options.find((option: any) => option.value?.name === initial);
+        const found = value.options.find((option: any) => option.value?.name === initial || option.value?.id === initial);
 
         if (found) {
           value.selected = found.value;
