@@ -384,8 +384,8 @@ export default {
         if (!this.managedSSHCIDRs.split(',').some((cidr) => cidr.trim())) {
           errors.push('Managed shared networking requires at least one SSH source CIDR.');
         }
-        if (!['canal', 'flannel'].includes(cni)) {
-          errors.push(`Managed T-Cloud security-group rules currently support canal or flannel, not ${ cni }.`);
+        if (!['canal', 'flannel', 'calico'].includes(cni)) {
+          errors.push(`Managed T-Cloud security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
         }
 
         return errors;
