@@ -49,7 +49,9 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   }
 
   registerSaveHooks(registerBeforeHook: RegisterClusterSaveHook, _registerAfterHook: RegisterClusterSaveHook, cluster: any) {
-    registerBeforeHook(() => this.prepareSharedNetwork(cluster), 'prepare-tcloud-shared-network', 0, this);
+    // Rancher saves machine-pool configs at priority 1. Use a truthy, lower
+    // priority because Rancher's hook registry normalizes priority 0 to 99.
+    registerBeforeHook(() => this.prepareSharedNetwork(cluster), 'prepare-tcloud-shared-network', -1, this);
   }
 
   private async prepareSharedNetwork(cluster: any): Promise<void> {
