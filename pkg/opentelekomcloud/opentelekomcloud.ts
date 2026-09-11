@@ -15,6 +15,7 @@
  * All calls are proxied via Rancher meta proxy using management/request.
  */
 export class OpenTelekomCloud {
+  public authMethod: string = 'password';
   public domainName: string = '';
   public endpoint: string = '';
   public projectDomainName: string = '';
@@ -22,6 +23,8 @@ export class OpenTelekomCloud {
   public projectName: string = '';
   public username: string = '';
   public password: string = '';
+  public accessKey: string = '';
+  public secretKey: string = '';
   public token: string = '';
   public region: string = '';
   private catalog: any;
@@ -55,7 +58,7 @@ export class OpenTelekomCloud {
   }
 
   /**
-   * Authenticate using username/password and (optionally) project.
+   * Authenticate using username/password or AK/SK and (optionally) project.
    * Populates this.token, this.userId and this.endpoints (nova, vpc, glance).
    */
   public async getToken() {
@@ -63,33 +66,42 @@ export class OpenTelekomCloud {
     const baseUrl = `/meta/proxy/${ endpoint }`;
     const url = `${ baseUrl }/auth/tokens`;
 
-    const data: any = {
-      auth: {
-        identity: {
-          methods:  ['password'],
-          password: {
-            user: {
-              name:     this.username,
-              domain:   { name: this.domainName },
-              password: this.password
-            }
-          }
-        }
+    // Build identity block based on auth method
+    const identity: Record<string, unknown> = this.authMethod === 'aksk'
+      ? {
+        methods:  ['hw_ak_sk'],
+        hw_ak_sk: {
+          access: { key: this.accessKey },
+          secret: { key: this.secretKey },
+        },
       }
-    };
+      : {
+        methods:  ['password'],
+        password: {
+          user: {
+            name:     this.username,
+            domain:   { name: this.domainName },
+            password: this.password,
+          },
+        },
+      };
 
-    if (this.projectName) {
-      // If projectName is set, scope to project
-      data.auth.scope = {
+    const data: Record<string, unknown> = { auth: { identity } };
+
+    if (this.projectId) {
+      (data.auth as Record<string, unknown>).scope = {
+        project: { id: this.projectId }
+      };
+    } else if (this.projectName) {
+      (data.auth as Record<string, unknown>).scope = {
         project: {
           name: this.projectName,
-          // projectDomainName is optional for OTC; if set, use it
           ...(this.projectDomainName ? { domain: { name: this.projectDomainName } } : {})
         }
       };
-    } else {
-      // Otherwise scope to domain
-      data.auth.scope = { domain: { name: this.domainName } };
+    } else if (this.authMethod === 'password') {
+      // Password auth without project: scope to domain
+      (data.auth as Record<string, unknown>).scope = { domain: { name: this.domainName } };
     }
 
     const headers = { Accept: 'application/json' };

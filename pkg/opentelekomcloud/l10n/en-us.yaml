@@ -6,17 +6,22 @@ driver:
         authenticate: Authenticate
         addToAllowList: Add host to allow list and retry
       fields:
+        authMethod: Authentication Method
         password: Password
         username: Username
         domainName: Domain Name
-        endpoint: T-Cloud (former OpenTelekomCloud) Authentication URL
+        endpoint: T Cloud Public Authentication URL
         projectName: Project Name
         region: Region
+        accessKey: Access Key (AK)
+        secretKey: Secret Key (SK)
       placeholders:
         password: pa$$w0Rd
         username: username
         domainName: OTC00000000001000000XXX
         endpoint: e.g. https://iam.eu-de.otc.t-systems.com/v3
+        accessKey: e.g. AKIA...
+        secretKey: Your secret key
       errors:
         notAllowed: "Rancher could not communicate with the T-Cloud server - this may be because the server `{ hostname }` is not configured in the node driver allow list"
         badGateway: "Rancher could not communicate with the T-Cloud server - the server must use the https protocol and must have a valid SSL certificate signed by a known CA"
