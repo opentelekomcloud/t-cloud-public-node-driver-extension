@@ -117,8 +117,10 @@ export default {
     this.projectId = credCfg.projectId || ann['opentelekomcloud.cattle.io/projectId'] || '';
     this.region = credCfg.region || ann['opentelekomcloud.cattle.io/region'] || '';
     this.endpoint = credCfg.authUrl || ann['opentelekomcloud.cattle.io/authUrl'] || '';
-    this.accessKey = credCfg.accessKey || ann['opentelekomcloud.cattle.io/accessKey'] || '';
-    this.secretKey = credCfg.secretKey || ann['opentelekomcloud.cattle.io/secretKey'] || '';
+
+    // AK/SK values are loaded only from the referenced Kubernetes Secret below.
+    this.accessKey = '';
+    this.secretKey = '';
 
     // Try and get the secret for the Cloud Credential as we need the plain-text password
     try {
@@ -174,7 +176,7 @@ export default {
         this.authenticating = false;
         this.$emit('validationChanged', false);
 
-        this.errors.push('Unable to authenticate with the T-Cloud server');
+        this.errors.push('Unable to authenticate with the T-Cloud Public server');
 
         return;
       }
@@ -389,7 +391,7 @@ export default {
       const errors = [];
 
       if (!this.controllerAvailable) {
-        errors.push('Shared networking requires the T-Cloud Rancher Network Controller. Install it and reload Rancher.');
+        errors.push('Shared networking requires the T-Cloud Public Rancher Network Controller. Install it and reload Rancher.');
       }
 
       if (this.managedNetwork) {
@@ -408,7 +410,7 @@ export default {
           errors.push('Managed shared networking requires at least one SSH source CIDR.');
         }
         if (!['canal', 'flannel', 'calico'].includes(cni)) {
-          errors.push(`Managed T-Cloud security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
+          errors.push(`Managed T-Cloud Public security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
         }
 
         return errors;
@@ -655,7 +657,7 @@ export default {
         v-if="sharedNetworkRequired && !controllerAvailable"
         color="error"
       >
-        Shared networking is unavailable because the T-Cloud Rancher Network
+        Shared networking is unavailable because the T-Cloud Public Rancher Network
         Controller CRD is not installed. Install the controller and reload this
         page. Managed mode remains disabled until the CRD is detected.
       </Banner>
@@ -668,7 +670,7 @@ export default {
       </Banner>
       <div class="opentelekomcloud-config">
         <div class="title">
-          T-Cloud (former OpenTelekomCloud) Configuration
+          T-Cloud Public Configuration
         </div>
         <div
           v-if="authenticating"
@@ -676,7 +678,7 @@ export default {
         >
           <i class="icon-spinner icon-spin icon-lg" />
           <span>
-            Authenticating with the T-Cloud server ...
+            Authenticating with the T-Cloud Public server ...
           </span>
         </div>
       </div>

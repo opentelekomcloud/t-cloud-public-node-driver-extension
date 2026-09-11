@@ -1,3 +1,7 @@
+cluster:
+  provider:
+    opentelekomcloud: T-Cloud Public
+
 driver:
   opentelekomcloud:
     auth:
@@ -10,7 +14,7 @@ driver:
         password: Password
         username: Username
         domainName: Domain Name
-        endpoint: T Cloud Public Authentication URL
+        endpoint: T-Cloud Public Authentication URL
         projectName: Project Name
         region: Region
         accessKey: Access Key (AK)
@@ -23,8 +27,8 @@ driver:
         accessKey: e.g. AKIA...
         secretKey: Your secret key
       errors:
-        notAllowed: "Rancher could not communicate with the T-Cloud server - this may be because the server `{ hostname }` is not configured in the node driver allow list"
-        badGateway: "Rancher could not communicate with the T-Cloud server - the server must use the https protocol and must have a valid SSL certificate signed by a known CA"
+        notAllowed: "Rancher could not communicate with the T-Cloud Public server - this may be because the server `{ hostname }` is not configured in the node driver allow list"
+        badGateway: "Rancher could not communicate with the T-Cloud Public server - the server must use the https protocol and must have a valid SSL certificate signed by a known CA"
         unauthorized: "Unauthorized - please check the username/password are correct"
-        other: "Rancher could not communicate with the T-Cloud server"
-        regions: "Unable to fetch the list of regions from the T-Cloud server"
+        other: "Rancher could not communicate with the T-Cloud Public server"
+        regions: "Unable to fetch the list of regions from the T-Cloud Public server"

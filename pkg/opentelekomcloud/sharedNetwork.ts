@@ -48,7 +48,7 @@ export function credentialSecretReference(credentialId: string): { namespace: st
   const separator = credentialId.indexOf(':');
 
   if (separator < 1 || separator === credentialId.length - 1) {
-    throw new Error('The selected T-Cloud credential does not reference a namespaced Secret.');
+    throw new Error('The selected T-Cloud Public credential does not reference a namespaced Secret.');
   }
 
   return {

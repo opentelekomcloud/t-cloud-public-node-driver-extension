@@ -49,8 +49,6 @@ export default {
       decoded.region = ann['opentelekomcloud.cattle.io/region'] || decoded.region;
       decoded.authUrl = ann['opentelekomcloud.cattle.io/authUrl'] || decoded.authUrl;
       decoded.projectName = ann['opentelekomcloud.cattle.io/projectName'] || decoded.projectName;
-      decoded.accessKey = ann['opentelekomcloud.cattle.io/accessKey'] || decoded.accessKey;
-      decoded.secretKey = ann['opentelekomcloud.cattle.io/secretKey'] || decoded.secretKey;
     }
 
     // Default region if nothing is set yet
@@ -195,11 +193,14 @@ export default {
       this.value.annotations['opentelekomcloud.cattle.io/authMethod'] = this.authMethod;
       this.value.annotations['opentelekomcloud.cattle.io/username'] = decoded.username;
       this.value.annotations['opentelekomcloud.cattle.io/domainName'] = decoded.domainName;
-      this.value.annotations['opentelekomcloud.cattle.io/password'] = decoded.password;
       this.value.annotations['opentelekomcloud.cattle.io/region'] = decoded.region;
       this.value.annotations['opentelekomcloud.cattle.io/authUrl'] = decoded.authUrl;
-      this.value.annotations['opentelekomcloud.cattle.io/accessKey'] = decoded.accessKey;
-      this.value.annotations['opentelekomcloud.cattle.io/secretKey'] = decoded.secretKey;
+
+      // Credential material belongs exclusively in Secret data. Remove values
+      // written by older extension versions when the credential is saved.
+      delete this.value.annotations['opentelekomcloud.cattle.io/password'];
+      delete this.value.annotations['opentelekomcloud.cattle.io/accessKey'];
+      delete this.value.annotations['opentelekomcloud.cattle.io/secretKey'];
 
       if (this.project) {
         const project = this.projects?.find((p) => p.name === this.project);
@@ -302,7 +303,7 @@ export default {
         if (res.error._status === 502 && !this.hostInAllowList()) {
           this.errorAllowHost = true;
         } else if (res.error._status === 502) {
-          this.error = this.t?.('driver.opentelekomcloud.auth.errors.badGateway') || 'Bad gateway when talking to T-Cloud IAM';
+          this.error = this.t?.('driver.opentelekomcloud.auth.errors.badGateway') || 'Bad gateway when talking to T-Cloud Public IAM';
         } else if (res.error._status === 401) {
           this.error = this.t?.('driver.opentelekomcloud.auth.errors.unauthorized') || 'Unauthorized – check username/password/domain';
         } else {

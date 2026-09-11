@@ -1,7 +1,7 @@
-# T-Cloud (former OpenTelekomCloud) Node Driver Extension for Rancher
+# T-Cloud Public Node Driver Extension for Rancher
 
-This repository contains a **Rancher UI Extension** that integrates the **T-Cloud (former OpenTelekomCloud) machine driver** into Rancher (RKE2).  
-It provides a complete UI for configuring T-Cloud machines, managing cloud credentials, and provisioning RKE2 clusters using T-Cloud instances.
+This repository contains a **Rancher UI Extension** that integrates the **T-Cloud Public machine driver** into Rancher (RKE2).
+It provides a complete UI for configuring T-Cloud Public machines, managing cloud credentials, and provisioning RKE2 clusters using T-Cloud Public instances.
 
 This extension replaces the legacy node-driver UI and implements Rancher's new **UI Extensions Framework** (v3+).
 
@@ -21,7 +21,7 @@ cluster-scoped resources. The extension offers two ownership policies:
 Managed mode is disabled when the
 `tcloudclusternetworks.infrastructure.otc.t-systems.com` CRD is unavailable.
 Install the
-[T-Cloud Rancher Network Controller](https://github.com/opentelekomcloud/t-cloud-public-rancher-network-controller)
+[T-Cloud Public Rancher Network Controller](https://github.com/opentelekomcloud/t-cloud-public-rancher-network-controller)
 before provisioning a multi-node cluster. The extension waits for `Ready=True`,
 copies the returned resource IDs and names into every active machine pool, sets
 the driver network scope to `shared`, and annotates the Rancher Cluster with the

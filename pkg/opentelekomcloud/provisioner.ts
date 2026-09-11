@@ -29,6 +29,8 @@ function readyCondition(resource: any): any {
 export default class TCloudProvisioner implements IClusterProvisioner {
   id = 'opentelekomcloud';
 
+  label = 'T-Cloud Public';
+
   detailTabs = {
     machines:     true,
     logs:         true,
@@ -63,14 +65,14 @@ export default class TCloudProvisioner implements IClusterProvisioner {
       return;
     }
     if (!this.getters['management/schemaFor'](TCLOUD_NETWORK_TYPE)) {
-      throw new Error('Shared networking requires the T-Cloud Rancher Network Controller CRD. Install the controller and reload Rancher.');
+      throw new Error('Shared networking requires the T-Cloud Public Rancher Network Controller CRD. Install the controller and reload Rancher.');
     }
 
     const namespace = cluster.metadata?.namespace || 'fleet-default';
     const clusterName = cluster.metadata?.name;
 
     if (!clusterName) {
-      throw new Error('Set the cluster name before saving T-Cloud shared networking.');
+      throw new Error('Set the cluster name before saving T-Cloud Public shared networking.');
     }
 
     cluster.metadata.annotations = cluster.metadata.annotations || {};
@@ -158,19 +160,19 @@ export default class TCloudProvisioner implements IClusterProvisioner {
         return resource;
       }
       if (condition?.status === 'False') {
-        throw new Error(`T-Cloud shared network is not ready: ${ condition.message || condition.reason || 'controller reconciliation failed' }`);
+        throw new Error(`T-Cloud Public shared network is not ready: ${ condition.message || condition.reason || 'controller reconciliation failed' }`);
       }
       await sleep(POLL_INTERVAL_MS);
     }
 
-    throw new Error(`Timed out waiting for T-Cloud shared network ${ id } to become ready.`);
+    throw new Error(`Timed out waiting for T-Cloud Public shared network ${ id } to become ready.`);
   }
 
   private applyNetworkToPools(machinePools: any[], resource: any) {
     const resources = resource.status?.resources;
 
     if (!resources?.vpc?.id || !resources?.subnet?.id || !resources?.securityGroup?.name) {
-      throw new Error('The T-Cloud network controller reported Ready without complete resource status.');
+      throw new Error('The T-Cloud Public network controller reported Ready without complete resource status.');
     }
 
     activePools(machinePools).forEach((entry) => {
