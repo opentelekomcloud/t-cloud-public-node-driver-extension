@@ -7,7 +7,6 @@ import {
   credentialSecretReference,
   getSharedNetworkContext,
   networkResourceName,
-  nodeCount,
 } from './sharedNetwork';
 
 const READY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -59,9 +58,7 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   private async prepareSharedNetwork(cluster: any): Promise<void> {
     const context = getSharedNetworkContext(cluster);
 
-    const alreadyShared = !!cluster.metadata?.annotations?.[NETWORK_ANNOTATION];
-
-    if (!context || (nodeCount(context.machinePools) <= 1 && !alreadyShared)) {
+    if (!context) {
       return;
     }
     if (!this.getters['management/schemaFor'](TCLOUD_NETWORK_TYPE)) {
@@ -111,6 +108,7 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   private networkResource(cluster: any, name: string, namespace: string, context: any): any {
     const secret = credentialSecretReference(context.credentialId);
     const managed = context.policy === 'Managed';
+    const adopt = context.policy === 'Adopt';
 
     return {
       type:       TCLOUD_NETWORK_TYPE,
@@ -128,15 +126,18 @@ export default class TCloudProvisioner implements IClusterProvisioner {
           vpc: managed ? {
             name: context.vpc.name || cluster.metadata.name,
             cidr: context.vpc.cidr,
-          } : { id: context.vpc.id },
+          } : adopt ? {} : { id: context.vpc.id },
           subnet: managed ? {
             name:             context.subnet.name || `${ cluster.metadata.name }-subnet`,
             cidr:             context.subnet.cidr,
             gatewayIP:        context.subnet.gatewayIP,
             availabilityZone: context.subnet.availabilityZone,
-          } : { id: context.subnet.id },
+          } : adopt ? {} : { id: context.subnet.id },
           securityGroup: managed ? {
             name:            context.securityGroup.name || `${ cluster.metadata.name }-rke2`,
+            cni:             context.securityGroup.cni || 'canal',
+            sshAllowedCIDRs: context.securityGroup.sshAllowedCIDRs,
+          } : adopt ? {
             cni:             context.securityGroup.cni || 'canal',
             sshAllowedCIDRs: context.securityGroup.sshAllowedCIDRs,
           } : { id: context.securityGroup.id },

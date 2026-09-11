@@ -2,7 +2,7 @@ export const TCLOUD_NETWORK_TYPE = 'infrastructure.otc.t-systems.com.tcloudclust
 export const NETWORK_ANNOTATION = 'infrastructure.otc.t-systems.com/cluster-network';
 export const NETWORK_POLICY_ANNOTATION = 'infrastructure.otc.t-systems.com/network-policy';
 
-export type NetworkPolicy = 'Managed' | 'Observe';
+export type NetworkPolicy = 'Managed' | 'Observe' | 'Adopt';
 
 export interface SharedNetworkContext {
   machinePools: any[];

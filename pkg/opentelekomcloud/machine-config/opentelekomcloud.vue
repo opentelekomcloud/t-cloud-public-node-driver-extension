@@ -205,7 +205,8 @@ export default {
 
   data() {
     const annotations = this.cluster?.metadata?.annotations || {};
-    const controllerAvailable = !!this.$store.getters['management/schemaFor'](TCLOUD_NETWORK_TYPE);
+    const hasExistingNetwork = this.machinePools.some((entry) => entry.config?.vpcId && entry.config?.subnetId && entry.config?.secGroups);
+    const defaultNetworkPolicy = this.isCreate ? 'Managed' : hasExistingNetwork ? 'Observe' : 'Adopt';
 
     return {
       authenticating:      false,
@@ -240,7 +241,7 @@ export default {
       creatingSubnet:      false,
       createSubnetError:   null,
       initialSubnet:       null,
-      networkPolicy:       annotations[NETWORK_POLICY_ANNOTATION] || (controllerAvailable ? 'Managed' : 'Observe'),
+      networkPolicy:       annotations[NETWORK_POLICY_ANNOTATION] || defaultNetworkPolicy,
       managedVpcCIDR:      annotations['infrastructure.otc.t-systems.com/vpc-cidr'] || '192.168.0.0/16',
       managedSubnetCIDR:   annotations['infrastructure.otc.t-systems.com/subnet-cidr'] || '192.168.0.0/24',
       managedGatewayIP:    annotations['infrastructure.otc.t-systems.com/gateway-ip'] || '192.168.0.1',
@@ -256,7 +257,7 @@ export default {
     sharedNetworkRequired() {
       const alreadyShared = !!this.cluster?.metadata?.annotations?.[NETWORK_ANNOTATION];
 
-      return alreadyShared || this.activeMachinePools.reduce((total, entry) => total + Number(entry.pool?.quantity || 0), 0) > 1;
+      return this.isCreate || alreadyShared || this.activeMachinePools.reduce((total, entry) => total + Number(entry.pool?.quantity || 0), 0) > 1;
     },
 
     controllerAvailable() {
@@ -267,12 +268,25 @@ export default {
       return this.networkPolicy === 'Managed';
     },
 
+    adoptingNetwork() {
+      return this.networkPolicy === 'Adopt';
+    },
+
+    controllerOwnedNetwork() {
+      return this.managedNetwork || this.adoptingNetwork;
+    },
+
     networkPolicies() {
       return [
         {
           label:    'Managed — create and clean up with the controller',
           value:    'Managed',
           disabled: !this.controllerAvailable,
+        },
+        {
+          label:    'Adopt — reuse this cluster’s first machine network',
+          value:    'Adopt',
+          disabled: this.isCreate || !this.controllerAvailable,
         },
         { label: 'Existing — observe resources without deleting them', value: 'Observe' },
       ];
@@ -289,7 +303,7 @@ export default {
     },
 
     sharedNetworkMismatch() {
-      if (!this.sharedNetworkRequired || this.managedNetwork) {
+      if (!this.sharedNetworkRequired || this.controllerOwnedNetwork) {
         return false;
       }
 
@@ -394,23 +408,23 @@ export default {
         errors.push('Shared networking requires the T-Cloud Public Rancher Network Controller. Install it and reload Rancher.');
       }
 
-      if (this.managedNetwork) {
+      if (this.controllerOwnedNetwork) {
         const cni = this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal';
 
-        if (!this.managedVpcCIDR || !this.managedSubnetCIDR || !this.managedGatewayIP) {
+        if (this.managedNetwork && (!this.managedVpcCIDR || !this.managedSubnetCIDR || !this.managedGatewayIP)) {
           errors.push('Managed shared networking requires VPC CIDR, subnet CIDR, and gateway IP.');
         }
-        if (this.managedVpcCIDR && !isValidCidr(this.managedVpcCIDR)) {
+        if (this.managedNetwork && this.managedVpcCIDR && !isValidCidr(this.managedVpcCIDR)) {
           errors.push('VPC CIDR must use IPv4 CIDR notation.');
         }
-        if (this.managedSubnetCIDR && !isValidCidr(this.managedSubnetCIDR)) {
+        if (this.managedNetwork && this.managedSubnetCIDR && !isValidCidr(this.managedSubnetCIDR)) {
           errors.push('Subnet CIDR must use IPv4 CIDR notation.');
         }
         if (!this.managedSSHCIDRs.split(',').some((cidr) => cidr.trim())) {
-          errors.push('Managed shared networking requires at least one SSH source CIDR.');
+          errors.push('Controller-owned shared networking requires at least one SSH source CIDR.');
         }
         if (!['canal', 'flannel', 'calico'].includes(cni)) {
-          errors.push(`Managed T-Cloud Public security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
+          errors.push(`Controller-owned T-Cloud Public security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
         }
 
         return errors;
@@ -452,7 +466,7 @@ export default {
         vpc:          this.managedNetwork ? {
           name: this.cluster.metadata.name,
           cidr: this.managedVpcCIDR,
-        } : {
+        } : this.adoptingNetwork ? {} : {
           id:   this.vpcs.selected?.id,
           name: this.vpcs.selected?.name,
         },
@@ -461,11 +475,11 @@ export default {
           cidr:             this.managedSubnetCIDR,
           gatewayIP:        this.managedGatewayIP,
           availabilityZone: this.availabilityZones.selected?.name,
-        } : {
+        } : this.adoptingNetwork ? {} : {
           id:   this.subnets.selected?.id,
           name: this.subnets.selected?.name,
         },
-        securityGroup: this.managedNetwork ? {
+        securityGroup: this.controllerOwnedNetwork ? {
           name:            `${ this.cluster.metadata.name }-rke2`,
           cni:             this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal',
           sshAllowedCIDRs: this.managedSSHCIDRs.split(',').map((cidr) => cidr.trim()).filter(Boolean),
@@ -650,8 +664,8 @@ export default {
         v-if="sharedNetworkRequired"
         color="info"
       >
-        This cluster has multiple nodes or machine pools. One shared VPC,
-        subnet, and security group is required for all active pools.
+        This cluster uses one controller-coordinated VPC, subnet, and security
+        group so it can scale safely across nodes and machine pools.
       </Banner>
       <Banner
         v-if="sharedNetworkRequired && !controllerAvailable"
@@ -667,6 +681,13 @@ export default {
       >
         The machine pools use different networks. Select the same VPC, subnet,
         and security group for every pool.
+      </Banner>
+      <Banner
+        v-if="sharedNetworkRequired && adoptingNetwork"
+        color="info"
+      >
+        The controller will adopt the oldest ready machine's driver-created
+        VPC, subnet, and security group before Rancher provisions more nodes.
       </Banner>
       <div class="opentelekomcloud-config">
         <div class="title">
@@ -696,8 +717,11 @@ export default {
           />
         </div>
       </div>
-      <template v-if="sharedNetworkRequired && managedNetwork">
-        <div class="row mt-10">
+      <template v-if="sharedNetworkRequired && controllerOwnedNetwork">
+        <div
+          v-if="managedNetwork"
+          class="row mt-10"
+        >
           <div class="col span-4">
             <LabeledInput
               v-model:value="managedVpcCIDR"
@@ -798,7 +822,7 @@ export default {
         </div>
       </div>
       <div
-        v-if="!sharedNetworkRequired || !managedNetwork"
+        v-if="!sharedNetworkRequired || !controllerOwnedNetwork"
         class="row mt-10"
       >
         <div class="col span-6">
@@ -837,7 +861,7 @@ export default {
         </div>
       </div>
       <div
-        v-if="!sharedNetworkRequired || !managedNetwork"
+        v-if="!sharedNetworkRequired || !controllerOwnedNetwork"
         class="row mt-10"
       >
         <div class="col span-6">
@@ -862,7 +886,7 @@ export default {
         </div>
       </div>
       <CreateNetworkResourceForm
-        v-if="creatingVpc && (!sharedNetworkRequired || !managedNetwork)"
+        v-if="creatingVpc && (!sharedNetworkRequired || !controllerOwnedNetwork)"
         resource-label="VPC"
         default-cidr="192.168.0.0/16"
         :busy="vpcs.busy"
@@ -871,7 +895,7 @@ export default {
         @cancel="cancelCreateVpc"
       />
       <CreateNetworkResourceForm
-        v-if="creatingSubnet && (!sharedNetworkRequired || !managedNetwork)"
+        v-if="creatingSubnet && (!sharedNetworkRequired || !controllerOwnedNetwork)"
         resource-label="Subnet"
         default-cidr="192.168.0.0/24"
         :busy="subnets.busy"
