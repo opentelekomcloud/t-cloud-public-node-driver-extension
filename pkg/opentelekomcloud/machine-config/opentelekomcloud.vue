@@ -208,7 +208,7 @@ export default {
   data() {
     const annotations = this.cluster?.metadata?.annotations || {};
     const hasExistingNetwork = this.machinePools.some((entry) => entry.config?.vpcId && entry.config?.subnetId && entry.config?.secGroups);
-    const defaultNetworkPolicy = hasExistingNetwork ? 'Observe' : this.cluster?.status?.ready === true ? 'Adopt' : 'Managed';
+    const defaultNetworkPolicy = this.isCreate ? 'Managed' : hasExistingNetwork ? 'Observe' : 'Adopt';
 
     return {
       authenticating:      false,

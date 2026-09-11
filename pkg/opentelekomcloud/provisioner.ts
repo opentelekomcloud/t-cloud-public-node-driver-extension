@@ -161,6 +161,11 @@ export default class TCloudProvisioner implements IClusterProvisioner {
         return resource;
       }
       if (condition?.status === 'False') {
+        if (resource.spec?.managementPolicy === 'Adopt' && condition.reason === 'NetworkAdoptionFailed') {
+          await sleep(POLL_INTERVAL_MS);
+
+          continue;
+        }
         throw new Error(`T-Cloud Public shared network is not ready: ${ condition.message || condition.reason || 'controller reconciliation failed' }`);
       }
       await sleep(POLL_INTERVAL_MS);
