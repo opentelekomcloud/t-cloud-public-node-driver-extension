@@ -38,7 +38,13 @@ function selectByName(list: OptionsList, name: string): void {
 const CIDR_REGEX = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
 
 function isValidCidr(cidr: string): boolean {
-  return CIDR_REGEX.test(cidr);
+  const match = CIDR_REGEX.exec(cidr);
+
+  if (!match) {
+    return false;
+  }
+
+  return match.slice(1, 5).every((octet) => Number(octet) <= 255) && Number(match[5]) <= 32;
 }
 
 function gatewayFromCidr(cidr: string): string {

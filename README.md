@@ -1,9 +1,35 @@
-# T Cloud Public Node Driver Extension for Rancher
+# T-Cloud Public Node Driver Extension for Rancher
 
-This repository contains a **Rancher UI Extension** that integrates the **T Cloud Public machine driver** into Rancher (RKE2).  
-It provides a complete UI for configuring OTC machines, managing cloud credentials, and provisioning RKE2 clusters using OTC instances.
+This repository contains a **Rancher UI Extension** that integrates the **T-Cloud Public machine driver** into Rancher (RKE2).
+It provides a complete UI for configuring T-Cloud Public machines, managing cloud credentials, and provisioning RKE2 clusters using T-Cloud Public instances.
 
 This extension replaces the legacy node-driver UI and implements Rancher's new **UI Extensions Framework** (v3+).
+
+## Shared cluster networking
+
+Clusters with more than one active node must use one VPC, subnet, and security
+group across all machine pools. After a cluster enters shared mode, that mode is
+kept during scale-down so a remaining node can never reclaim ownership of
+cluster-scoped resources. The extension offers two ownership policies:
+
+- **Managed** creates a `TCloudClusterNetwork` before Rancher saves the machine
+  configs. The network controller creates the resources and deletes them after
+  the Rancher cluster and its cloud machines are deleted.
+- **Existing** creates an `Observe` network object for selected resource IDs.
+  The controller validates and tracks them but never deletes them.
+
+Managed mode is disabled when the
+`tcloudclusternetworks.infrastructure.otc.t-systems.com` CRD is unavailable.
+Install the
+[T-Cloud Public Rancher Network Controller](https://github.com/opentelekomcloud/t-cloud-public-rancher-network-controller)
+before provisioning a multi-node cluster. The extension waits for `Ready=True`,
+copies the returned resource IDs and names into every active machine pool, sets
+the driver network scope to `shared`, and annotates the Rancher Cluster with the
+network object name.
+
+The installed docker-machine driver must support `networkScope=shared` and
+`skipDefaultSg=true`. In that scope the driver must not delete the shared VPC,
+subnet, or security group; cleanup belongs exclusively to the controller.
 
 ---
 

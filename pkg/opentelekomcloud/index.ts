@@ -1,5 +1,6 @@
 import { importTypes } from '@rancher/auto-import';
 import { IPlugin } from '@shell/core/types';
+import TCloudProvisioner from './provisioner';
 
 // Init the package
 export default function(plugin: IPlugin) {
@@ -9,6 +10,7 @@ export default function(plugin: IPlugin) {
   const metadata = require('./package.json');
 
   plugin.register('image', 'providers/opentelekomcloud.svg', require('./assets/icon-opentelekomcloud.svg'));
+  plugin.register('provisioner', 'opentelekomcloud', TCloudProvisioner);
 
   // Attach metadata and tell Rancher which registered image to use as the extension icon
   plugin.metadata = {

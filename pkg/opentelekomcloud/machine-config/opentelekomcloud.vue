@@ -11,11 +11,18 @@ import FileSelector from '../components/FileSelector';
 import CreateNetworkResourceForm from '../components/CreateNetworkResourceForm';
 import { OpenTelekomCloud } from '../opentelekomcloud.ts';
 import {
+  NETWORK_POLICY_ANNOTATION,
+  NETWORK_ANNOTATION,
+  TCLOUD_NETWORK_TYPE,
+  setSharedNetworkContext,
+} from '../sharedNetwork';
+import {
   CREATE_NEW_NETWORK,
   addCreateNewOption,
   cancelCreate,
   selectByName,
   gatewayFromCidr,
+  isValidCidr,
 } from '../helpers/networkResourceOptions';
 
 function initOptions() {
@@ -63,6 +70,16 @@ export default {
     provider: {
       type:     String,
       required: true,
+    },
+
+    machinePools: {
+      type:    Array,
+      default: () => [],
+    },
+
+    poolId: {
+      type:    String,
+      default: '',
     }
   },
 
@@ -76,6 +93,10 @@ export default {
       this.initForViewMode();
 
       return;
+    }
+
+    if (this.sharedNetworkRequired) {
+      this.applySharedNetworkConfig();
     }
 
     try {
@@ -96,8 +117,10 @@ export default {
     this.projectId = credCfg.projectId || ann['opentelekomcloud.cattle.io/projectId'] || '';
     this.region = credCfg.region || ann['opentelekomcloud.cattle.io/region'] || '';
     this.endpoint = credCfg.authUrl || ann['opentelekomcloud.cattle.io/authUrl'] || '';
-    this.accessKey = credCfg.accessKey || ann['opentelekomcloud.cattle.io/accessKey'] || '';
-    this.secretKey = credCfg.secretKey || ann['opentelekomcloud.cattle.io/secretKey'] || '';
+
+    // AK/SK values are loaded only from the referenced Kubernetes Secret below.
+    this.accessKey = '';
+    this.secretKey = '';
 
     // Try and get the secret for the Cloud Credential as we need the plain-text password
     try {
@@ -153,7 +176,7 @@ export default {
         this.authenticating = false;
         this.$emit('validationChanged', false);
 
-        this.errors.push('Unable to authenticate with the OpenTelekomCloud server');
+        this.errors.push('Unable to authenticate with the T-Cloud Public server');
 
         return;
       }
@@ -163,14 +186,17 @@ export default {
       otc.getFlavors(this.flavors, this.value?.flavorName);
       otc.getImages(this.images, this.value?.imageName);
       otc.getKeyPairs(this.keyPairs, this.value?.keypairName);
-      otc.getSecurityGroups(this.securityGroups, this.value?.secGroups);
+      const sharedConfig = this.sharedNetworkConfig;
+      const securityGroup = this.value?.secGroups || sharedConfig?.secGroups;
+      const vpc = this.value?.vpcId || this.value?.vpcName || sharedConfig?.vpcId || sharedConfig?.vpcName;
+
+      this.initialSubnet = this.value?.subnetId || this.value?.subnetName || sharedConfig?.subnetId || sharedConfig?.subnetName;
+
+      otc.getSecurityGroups(this.securityGroups, securityGroup);
       otc.getFloatingIpPools(this.floatingIpPools, this.value?.floatingipPool);
-      otc.getVpcs(this.vpcs, this.value?.vpcName).then(() => {
+      otc.getVpcs(this.vpcs, vpc).then(() => {
         addCreateNewOption(this.vpcs, 'VPC', CREATE_NEW_NETWORK.VPC);
       });
-      if (this.value?.vpcId) {
-        otc.getSubnets(this.subnets, this.value.vpcId);
-      }
       otc.getAvailabilityZones(this.availabilityZones, this.value?.availabilityZone);
     });
 
@@ -178,6 +204,9 @@ export default {
   },
 
   data() {
+    const annotations = this.cluster?.metadata?.annotations || {};
+    const controllerAvailable = !!this.$store.getters['management/schemaFor'](TCLOUD_NETWORK_TYPE);
+
     return {
       authenticating:      false,
       ready:               false,
@@ -210,7 +239,65 @@ export default {
       createVpcError:      null,
       creatingSubnet:      false,
       createSubnetError:   null,
+      initialSubnet:       null,
+      networkPolicy:       annotations[NETWORK_POLICY_ANNOTATION] || (controllerAvailable ? 'Managed' : 'Observe'),
+      managedVpcCIDR:      annotations['infrastructure.otc.t-systems.com/vpc-cidr'] || '192.168.0.0/16',
+      managedSubnetCIDR:   annotations['infrastructure.otc.t-systems.com/subnet-cidr'] || '192.168.0.0/24',
+      managedGatewayIP:    annotations['infrastructure.otc.t-systems.com/gateway-ip'] || '192.168.0.1',
+      managedSSHCIDRs:     annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] || '',
     };
+  },
+
+  computed: {
+    activeMachinePools() {
+      return this.machinePools.filter((entry) => !entry.remove && Number(entry.pool?.quantity || 0) > 0);
+    },
+
+    sharedNetworkRequired() {
+      const alreadyShared = !!this.cluster?.metadata?.annotations?.[NETWORK_ANNOTATION];
+
+      return alreadyShared || this.activeMachinePools.reduce((total, entry) => total + Number(entry.pool?.quantity || 0), 0) > 1;
+    },
+
+    controllerAvailable() {
+      return !!this.$store.getters['management/schemaFor'](TCLOUD_NETWORK_TYPE);
+    },
+
+    managedNetwork() {
+      return this.networkPolicy === 'Managed';
+    },
+
+    networkPolicies() {
+      return [
+        {
+          label:    'Managed — create and clean up with the controller',
+          value:    'Managed',
+          disabled: !this.controllerAvailable,
+        },
+        { label: 'Existing — observe resources without deleting them', value: 'Observe' },
+      ];
+    },
+
+    sharedNetworkConfig() {
+      const entry = this.activeMachinePools.find((pool) => {
+        const config = pool.config;
+
+        return pool.id !== this.poolId && config?.vpcId && config?.subnetId && config?.secGroups;
+      });
+
+      return entry?.config || null;
+    },
+
+    sharedNetworkMismatch() {
+      if (!this.sharedNetworkRequired || this.managedNetwork) {
+        return false;
+      }
+
+      const configs = this.activeMachinePools.map((entry) => entry.config).filter((config) => config?.vpcId && config?.subnetId && config?.secGroups);
+      const networks = new Set(configs.map((config) => `${ config.vpcId }/${ config.subnetId }/${ config.secGroups }`));
+
+      return networks.size > 1;
+    },
   },
 
   watch: {
@@ -228,8 +315,11 @@ export default {
       this.createVpcError = null;
 
       if (newVpc && newVpc.id && this.otc) {
+        this.value.vpcName = newVpc.name;
+        this.value.vpcId = newVpc.id;
         this.subnets.enabled = true;
-        this.otc.getSubnets(this.subnets, newVpc.id).then(() => {
+        this.otc.getSubnets(this.subnets, newVpc.id, this.initialSubnet).then(() => {
+          this.initialSubnet = null;
           addCreateNewOption(this.subnets, 'Subnet', CREATE_NEW_NETWORK.SUBNET);
         });
       } else {
@@ -248,11 +338,143 @@ export default {
 
       this.creatingSubnet = false;
       this.createSubnetError = null;
+
+      if (newSubnet?.id) {
+        this.value.subnetName = newSubnet.name;
+        this.value.subnetId = newSubnet.id;
+      }
+    },
+    'securityGroups.selected'(newSecurityGroup) {
+      if (newSecurityGroup?.name) {
+        this.value.secGroups = newSecurityGroup.name;
+      }
+    },
+    sharedNetworkRequired(required) {
+      if (required) {
+        this.applySharedNetworkConfig();
+      }
+    },
+    networkPolicy() {
+      this.syncSharedNetworkContext();
     },
   },
 
   methods: {
     stringify,
+
+    applySharedNetworkConfig() {
+      const config = this.sharedNetworkConfig;
+
+      this.activeMachinePools.forEach((entry) => {
+        if (entry.config) {
+          entry.config.networkScope = 'shared';
+          entry.config.skipDefaultSg = true;
+        }
+      });
+
+      if (!config) {
+        return;
+      }
+
+      this.value.vpcName ||= config.vpcName;
+      this.value.vpcId ||= config.vpcId;
+      this.value.subnetName ||= config.subnetName;
+      this.value.subnetId ||= config.subnetId;
+      this.value.secGroups ||= config.secGroups;
+    },
+
+    validateNetwork() {
+      if (!this.sharedNetworkRequired) {
+        return [];
+      }
+
+      const errors = [];
+
+      if (!this.controllerAvailable) {
+        errors.push('Shared networking requires the T-Cloud Public Rancher Network Controller. Install it and reload Rancher.');
+      }
+
+      if (this.managedNetwork) {
+        const cni = this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal';
+
+        if (!this.managedVpcCIDR || !this.managedSubnetCIDR || !this.managedGatewayIP) {
+          errors.push('Managed shared networking requires VPC CIDR, subnet CIDR, and gateway IP.');
+        }
+        if (this.managedVpcCIDR && !isValidCidr(this.managedVpcCIDR)) {
+          errors.push('VPC CIDR must use IPv4 CIDR notation.');
+        }
+        if (this.managedSubnetCIDR && !isValidCidr(this.managedSubnetCIDR)) {
+          errors.push('Subnet CIDR must use IPv4 CIDR notation.');
+        }
+        if (!this.managedSSHCIDRs.split(',').some((cidr) => cidr.trim())) {
+          errors.push('Managed shared networking requires at least one SSH source CIDR.');
+        }
+        if (!['canal', 'flannel', 'calico'].includes(cni)) {
+          errors.push(`Managed T-Cloud Public security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
+        }
+
+        return errors;
+      }
+
+      const incompletePool = this.activeMachinePools.some((entry) => !entry.config?.vpcId || !entry.config?.subnetId || !entry.config?.secGroups);
+
+      if (incompletePool) {
+        errors.push('Every active machine pool must select a shared VPC, subnet, and security group.');
+      }
+      if (this.sharedNetworkMismatch) {
+        errors.push('All machine pools must use the same VPC, subnet, and security group.');
+      }
+
+      return errors;
+    },
+
+    syncSharedNetworkContext() {
+      if (!this.cluster || !this.sharedNetworkRequired) {
+        return;
+      }
+
+      this.cluster.metadata = this.cluster.metadata || {};
+      this.cluster.metadata.annotations = this.cluster.metadata.annotations || {};
+      const annotations = this.cluster.metadata.annotations;
+
+      annotations[NETWORK_POLICY_ANNOTATION] = this.networkPolicy;
+      annotations['infrastructure.otc.t-systems.com/vpc-cidr'] = this.managedVpcCIDR;
+      annotations['infrastructure.otc.t-systems.com/subnet-cidr'] = this.managedSubnetCIDR;
+      annotations['infrastructure.otc.t-systems.com/gateway-ip'] = this.managedGatewayIP;
+      annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] = this.managedSSHCIDRs;
+
+      setSharedNetworkContext(this.cluster, {
+        machinePools:  this.machinePools,
+        credentialId: this.credentialId,
+        policy:       this.networkPolicy,
+        region:       this.region,
+        projectName:  this.projectName,
+        vpc:          this.managedNetwork ? {
+          name: this.cluster.metadata.name,
+          cidr: this.managedVpcCIDR,
+        } : {
+          id:   this.vpcs.selected?.id,
+          name: this.vpcs.selected?.name,
+        },
+        subnet: this.managedNetwork ? {
+          name:             `${ this.cluster.metadata.name }-subnet`,
+          cidr:             this.managedSubnetCIDR,
+          gatewayIP:        this.managedGatewayIP,
+          availabilityZone: this.availabilityZones.selected?.name,
+        } : {
+          id:   this.subnets.selected?.id,
+          name: this.subnets.selected?.name,
+        },
+        securityGroup: this.managedNetwork ? {
+          name:            `${ this.cluster.metadata.name }-rke2`,
+          cni:             this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal',
+          sshAllowedCIDRs: this.managedSSHCIDRs.split(',').map((cidr) => cidr.trim()).filter(Boolean),
+        } : {
+          id:   this.securityGroups.selected?.id,
+          name: this.securityGroups.selected?.name,
+        },
+      });
+    },
 
     initForViewMode() {
       this.fakeSelectOptions(this.flavors, this.value?.flavorName);
@@ -324,9 +546,17 @@ export default {
       this.value.vpcName = this.vpcs.selected?.name;
       this.value.vpcId = this.vpcs.selected?.id;
       this.value.subnetName = this.subnets.selected?.name;
+      this.value.subnetId = this.subnets.selected?.id;
       this.value.secGroups = this.securityGroups.selected?.name;
       this.value.sshUser = this.sshUser;
       this.value.privateKeyFile = this.privateKeyFile;
+
+      if (this.sharedNetworkRequired) {
+        this.value.networkScope = 'shared';
+        this.value.skipDefaultSg = true;
+      }
+
+      this.syncSharedNetworkContext();
 
       // Not configurable
       this.value.endpointType = 'publicURL';
@@ -337,6 +567,12 @@ export default {
 
     test() {
       this.syncValue();
+
+      const errors = this.validateNetwork();
+
+      this.$emit('validationChanged', errors.length === 0);
+
+      return errors.length ? { errors } : true;
     },
 
     async handleCreateVpc({ name, cidr }) {
@@ -410,9 +646,31 @@ export default {
       </div>
     </div>
     <div>
+      <Banner
+        v-if="sharedNetworkRequired"
+        color="info"
+      >
+        This cluster has multiple nodes or machine pools. One shared VPC,
+        subnet, and security group is required for all active pools.
+      </Banner>
+      <Banner
+        v-if="sharedNetworkRequired && !controllerAvailable"
+        color="error"
+      >
+        Shared networking is unavailable because the T-Cloud Public Rancher Network
+        Controller CRD is not installed. Install the controller and reload this
+        page. Managed mode remains disabled until the CRD is detected.
+      </Banner>
+      <Banner
+        v-if="sharedNetworkMismatch"
+        color="error"
+      >
+        The machine pools use different networks. Select the same VPC, subnet,
+        and security group for every pool.
+      </Banner>
       <div class="opentelekomcloud-config">
         <div class="title">
-          OpenTelekomCloud Configuration
+          T-Cloud Public Configuration
         </div>
         <div
           v-if="authenticating"
@@ -420,10 +678,67 @@ export default {
         >
           <i class="icon-spinner icon-spin icon-lg" />
           <span>
-            Authenticating with the OpenTelekomCloud server ...
+            Authenticating with the T-Cloud Public server ...
           </span>
         </div>
       </div>
+      <div
+        v-if="sharedNetworkRequired"
+        class="row mt-10"
+      >
+        <div class="col span-6">
+          <LabeledSelect
+            v-model:value="networkPolicy"
+            label="Shared Network Ownership"
+            :options="networkPolicies"
+            :disabled="busy"
+            :searchable="false"
+          />
+        </div>
+      </div>
+      <template v-if="sharedNetworkRequired && managedNetwork">
+        <div class="row mt-10">
+          <div class="col span-4">
+            <LabeledInput
+              v-model:value="managedVpcCIDR"
+              label="VPC CIDR"
+              :mode="mode"
+              :disabled="busy"
+              :required="true"
+            />
+          </div>
+          <div class="col span-4">
+            <LabeledInput
+              v-model:value="managedSubnetCIDR"
+              label="Subnet CIDR"
+              :mode="mode"
+              :disabled="busy"
+              :required="true"
+            />
+          </div>
+          <div class="col span-4">
+            <LabeledInput
+              v-model:value="managedGatewayIP"
+              label="Gateway IP"
+              :mode="mode"
+              :disabled="busy"
+              :required="true"
+            />
+          </div>
+        </div>
+        <div class="row mt-10">
+          <div class="col span-12">
+            <LabeledInput
+              v-model:value="managedSSHCIDRs"
+              label="SSH Allowed CIDRs (comma-separated)"
+              placeholder="203.0.113.10/32"
+              :mode="mode"
+              :disabled="busy"
+              :required="true"
+            />
+          </div>
+        </div>
+      </template>
       <div class="row mt-10">
         <div class="col span-6">
           <LabeledSelect
@@ -482,7 +797,10 @@ export default {
           </LabeledInput>
         </div>
       </div>
-      <div class="row mt-10">
+      <div
+        v-if="!sharedNetworkRequired || !managedNetwork"
+        class="row mt-10"
+      >
         <div class="col span-6">
           <LabeledSelect
             v-model:value="securityGroups.selected"
@@ -518,7 +836,10 @@ export default {
           />
         </div>
       </div>
-      <div class="row mt-10">
+      <div
+        v-if="!sharedNetworkRequired || !managedNetwork"
+        class="row mt-10"
+      >
         <div class="col span-6">
           <LabeledSelect
             v-model:value="vpcs.selected"
@@ -541,7 +862,7 @@ export default {
         </div>
       </div>
       <CreateNetworkResourceForm
-        v-if="creatingVpc"
+        v-if="creatingVpc && (!sharedNetworkRequired || !managedNetwork)"
         resource-label="VPC"
         default-cidr="192.168.0.0/16"
         :busy="vpcs.busy"
@@ -550,7 +871,7 @@ export default {
         @cancel="cancelCreateVpc"
       />
       <CreateNetworkResourceForm
-        v-if="creatingSubnet"
+        v-if="creatingSubnet && (!sharedNetworkRequired || !managedNetwork)"
         resource-label="Subnet"
         default-cidr="192.168.0.0/24"
         :busy="subnets.busy"

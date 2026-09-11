@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in the T Cloud Public Node Driver Extension
+description: Report a bug in the T-Cloud Public Node Driver Extension
 labels: ["bug"]
 body:
   - type: markdown
@@ -87,6 +87,6 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Any other relevant information (browser, OS, OTC region, etc.)
+      description: Any other relevant information (browser, OS, T-Cloud Public region, etc.)
     validations:
       required: false
