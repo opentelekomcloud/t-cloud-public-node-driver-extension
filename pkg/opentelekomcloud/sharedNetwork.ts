@@ -21,6 +21,10 @@ export function setSharedNetworkContext(cluster: object, context: SharedNetworkC
   contexts.set(cluster, context);
 }
 
+export function clearSharedNetworkContext(cluster: object) {
+  contexts.delete(cluster);
+}
+
 export function getSharedNetworkContext(cluster: object): SharedNetworkContext | undefined {
   return contexts.get(cluster);
 }

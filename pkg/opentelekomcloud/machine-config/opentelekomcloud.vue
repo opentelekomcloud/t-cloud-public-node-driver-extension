@@ -14,6 +14,8 @@ import {
   NETWORK_POLICY_ANNOTATION,
   NETWORK_ANNOTATION,
   TCLOUD_NETWORK_TYPE,
+  clearSharedNetworkContext,
+  nodeCount,
   setSharedNetworkContext,
 } from '../sharedNetwork';
 import {
@@ -257,7 +259,7 @@ export default {
     sharedNetworkRequired() {
       const alreadyShared = !!this.cluster?.metadata?.annotations?.[NETWORK_ANNOTATION];
 
-      return this.isCreate || alreadyShared || this.activeMachinePools.reduce((total, entry) => total + Number(entry.pool?.quantity || 0), 0) > 1;
+      return alreadyShared || nodeCount(this.machinePools) > 1;
     },
 
     controllerAvailable() {
@@ -282,11 +284,6 @@ export default {
           label:    'Managed — create and clean up with the controller',
           value:    'Managed',
           disabled: !this.controllerAvailable,
-        },
-        {
-          label:    'Adopt — reuse this cluster’s first machine network',
-          value:    'Adopt',
-          disabled: this.isCreate || !this.controllerAvailable,
         },
         { label: 'Existing — observe resources without deleting them', value: 'Observe' },
       ];
@@ -366,7 +363,10 @@ export default {
     sharedNetworkRequired(required) {
       if (required) {
         this.applySharedNetworkConfig();
+      } else {
+        this.applyMachineNetworkConfig();
       }
+      this.syncSharedNetworkContext();
     },
     networkPolicy() {
       this.syncSharedNetworkContext();
@@ -395,6 +395,15 @@ export default {
       this.value.subnetName ||= config.subnetName;
       this.value.subnetId ||= config.subnetId;
       this.value.secGroups ||= config.secGroups;
+    },
+
+    applyMachineNetworkConfig() {
+      this.activeMachinePools.forEach((entry) => {
+        if (entry.config?.networkScope === 'shared') {
+          entry.config.networkScope = 'machine';
+          entry.config.skipDefaultSg = false;
+        }
+      });
     },
 
     validateNetwork() {
@@ -443,7 +452,22 @@ export default {
     },
 
     syncSharedNetworkContext() {
-      if (!this.cluster || !this.sharedNetworkRequired) {
+      if (!this.cluster) {
+        return;
+      }
+
+      if (!this.sharedNetworkRequired) {
+        clearSharedNetworkContext(this.cluster);
+        const annotations = this.cluster.metadata?.annotations;
+
+        if (annotations) {
+          delete annotations[NETWORK_POLICY_ANNOTATION];
+          delete annotations['infrastructure.otc.t-systems.com/vpc-cidr'];
+          delete annotations['infrastructure.otc.t-systems.com/subnet-cidr'];
+          delete annotations['infrastructure.otc.t-systems.com/gateway-ip'];
+          delete annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'];
+        }
+
         return;
       }
 
@@ -568,6 +592,9 @@ export default {
       if (this.sharedNetworkRequired) {
         this.value.networkScope = 'shared';
         this.value.skipDefaultSg = true;
+      } else {
+        this.value.networkScope = 'machine';
+        this.value.skipDefaultSg = false;
       }
 
       this.syncSharedNetworkContext();
@@ -704,7 +731,7 @@ export default {
         </div>
       </div>
       <div
-        v-if="sharedNetworkRequired"
+        v-if="sharedNetworkRequired && !adoptingNetwork"
         class="row mt-10"
       >
         <div class="col span-6">

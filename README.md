@@ -7,20 +7,24 @@ This extension replaces the legacy node-driver UI and implements Rancher's new *
 
 ## Shared cluster networking
 
-New clusters use one controller-coordinated VPC, subnet, and security group
-from initial provisioning so they can scale safely across machine pools. After
-a cluster enters shared mode, that mode is kept during scale-down so a remaining
-node can never reclaim ownership of cluster-scoped resources. The extension
-supports these policies:
+New multi-node clusters use one controller-coordinated VPC, subnet, and security
+group from initial provisioning so they can scale safely across machine pools.
+A new single-node cluster initially uses its driver-created network. When it is
+scaled up, the extension automatically adopts that network before Rancher creates
+the additional machines. After a cluster enters shared mode, that mode is kept
+during scale-down so a remaining node can never reclaim ownership of
+cluster-scoped resources. The extension exposes these ownership choices:
 
 - **Managed** creates a `TCloudClusterNetwork` before Rancher saves the machine
   configs. The network controller creates the resources and deletes them after
   the Rancher cluster and its cloud machines are deleted.
 - **Existing** creates an `Observe` network object for selected resource IDs.
   The controller validates and tracks them but never deletes them.
-- **Adopt** is selected when a legacy single-node cluster first scales up. The
-  controller discovers the driver-created network from Rancher's machine state,
-  adds the required CNI rules, and assumes cleanup responsibility.
+
+`Adopt` is an internal automatic transition for a single-node cluster when it
+first scales up; it is not a user-selectable ownership option. The controller
+discovers the driver-created network from Rancher's machine state, adds the
+required CNI rules, and assumes cleanup responsibility.
 
 Managed mode is disabled when the
 `tcloudclusternetworks.infrastructure.otc.t-systems.com` CRD is unavailable.
