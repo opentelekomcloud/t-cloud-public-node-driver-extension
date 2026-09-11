@@ -208,7 +208,7 @@ export default {
   data() {
     const annotations = this.cluster?.metadata?.annotations || {};
     const hasExistingNetwork = this.machinePools.some((entry) => entry.config?.vpcId && entry.config?.subnetId && entry.config?.secGroups);
-    const defaultNetworkPolicy = this.isCreate ? 'Managed' : hasExistingNetwork ? 'Observe' : 'Adopt';
+    const defaultNetworkPolicy = hasExistingNetwork ? 'Observe' : this.cluster?.status?.ready === true ? 'Adopt' : 'Managed';
 
     return {
       authenticating:      false,
@@ -731,7 +731,7 @@ export default {
         </div>
       </div>
       <div
-        v-if="sharedNetworkRequired && !adoptingNetwork"
+        v-if="sharedNetworkRequired"
         class="row mt-10"
       >
         <div class="col span-6">
@@ -739,6 +739,7 @@ export default {
             v-model:value="networkPolicy"
             label="Shared Network Ownership"
             :options="networkPolicies"
+            :placeholder="adoptingNetwork ? 'Automatic adoption; select to override' : ''"
             :disabled="busy"
             :searchable="false"
           />
