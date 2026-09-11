@@ -43,11 +43,14 @@ export default {
     if (this.mode !== _CREATE && this.value.annotations) {
       const ann = this.value.annotations;
 
+      decoded.authMethod = ann['opentelekomcloud.cattle.io/authMethod'] || decoded.authMethod;
       decoded.username = ann['opentelekomcloud.cattle.io/username'] || decoded.username;
       decoded.domainName = ann['opentelekomcloud.cattle.io/domainName'] || decoded.domainName;
       decoded.region = ann['opentelekomcloud.cattle.io/region'] || decoded.region;
       decoded.authUrl = ann['opentelekomcloud.cattle.io/authUrl'] || decoded.authUrl;
       decoded.projectName = ann['opentelekomcloud.cattle.io/projectName'] || decoded.projectName;
+      decoded.accessKey = ann['opentelekomcloud.cattle.io/accessKey'] || decoded.accessKey;
+      decoded.secretKey = ann['opentelekomcloud.cattle.io/secretKey'] || decoded.secretKey;
     }
 
     // Default region if nothing is set yet
@@ -58,12 +61,17 @@ export default {
     // Ensure authUrl derived from region
     decoded.authUrl = this.authUrlForRegion(decoded.region);
 
+    const authMethod = decoded.authMethod || 'password';
+
     // Push back into the model via setData so the store sees the values
+    this.value.setData('authMethod', authMethod);
     this.value.setData('username', decoded.username || '');
     this.value.setData('domainName', decoded.domainName || '');
     this.value.setData('password', decoded.password || '');
     this.value.setData('region', decoded.region || '');
     this.value.setData('authUrl', decoded.authUrl || '');
+    this.value.setData('accessKey', decoded.accessKey || '');
+    this.value.setData('secretKey', decoded.secretKey || '');
 
     return {
       driver:         {},
@@ -73,6 +81,7 @@ export default {
       errorAllowHost: false,
       allowBusy:      false,
       error:          '',
+      authMethod,
       region:         decoded.region || 'eu-de',
       project:        decoded.projectName || '',
     };
@@ -112,6 +121,13 @@ export default {
 
     // We can authenticate only when all required fields are present
     canAuthenticate() {
+      if (this.authMethod === 'aksk') {
+        return !!this.value?.decodedData?.accessKey &&
+          !!this.value?.decodedData?.secretKey &&
+          !!this.region &&
+          !!this.value?.decodedData?.authUrl;
+      }
+
       return !!this.value?.decodedData?.domainName &&
         !!this.value?.decodedData?.username &&
         !!this.value?.decodedData?.password &&
@@ -121,6 +137,13 @@ export default {
   },
 
   watch: {
+    authMethod(newVal) {
+      this.value.setData('authMethod', newVal);
+
+      // Reset step when switching auth method
+      this.clear();
+    },
+
     region(newVal) {
       const url = this.authUrlForRegion(newVal);
 
@@ -169,20 +192,25 @@ export default {
 
       const decoded = this.value.decodedData;
 
+      this.value.annotations['opentelekomcloud.cattle.io/authMethod'] = this.authMethod;
       this.value.annotations['opentelekomcloud.cattle.io/username'] = decoded.username;
       this.value.annotations['opentelekomcloud.cattle.io/domainName'] = decoded.domainName;
       this.value.annotations['opentelekomcloud.cattle.io/password'] = decoded.password;
       this.value.annotations['opentelekomcloud.cattle.io/region'] = decoded.region;
       this.value.annotations['opentelekomcloud.cattle.io/authUrl'] = decoded.authUrl;
+      this.value.annotations['opentelekomcloud.cattle.io/accessKey'] = decoded.accessKey;
+      this.value.annotations['opentelekomcloud.cattle.io/secretKey'] = decoded.secretKey;
 
       if (this.project) {
         const project = this.projects?.find((p) => p.name === this.project);
 
         if (project) {
           this.value.annotations['opentelekomcloud.cattle.io/projectName'] = project.name;
-          // Also store projectName directly in the credential config so it is available on opentelekomcloudcredentialConfig
+          this.value.annotations['opentelekomcloud.cattle.io/projectId'] = project.id;
           this.value.setData('projectName', project.name || '');
+          this.value.setData('projectId', project.id || '');
           this.value.decodedData.projectName = project.name || '';
+          this.value.decodedData.projectId = project.id || '';
         }
       }
 
@@ -247,9 +275,12 @@ export default {
 
       const os = new OpenTelekomCloud(this.$store, {
         endpoint:   decoded.authUrl,
+        authMethod: this.authMethod,
         domainName: decoded.domainName,
         username:   decoded.username,
         password:   decoded.password,
+        accessKey:  decoded.accessKey,
+        secretKey:  decoded.secretKey,
       });
 
       this.allowBusy = false;
@@ -322,14 +353,43 @@ export default {
       this.value.decodedData.password = v;
     },
 
+    onAccessKeyInput(evt) {
+      const v = evt && evt.target ? evt.target.value : evt;
+
+      this.value.setData('accessKey', v);
+      this.value.decodedData.accessKey = v;
+    },
+
+    onSecretKeyInput(evt) {
+      const v = evt && evt.target ? evt.target.value : evt;
+
+      this.value.setData('secretKey', v);
+      this.value.decodedData.secretKey = v;
+    },
+
   }
 };
 </script>
 
 <template>
   <div>
-    <!-- Region + derived Auth URL -->
+    <!-- Auth method selector -->
     <div class="row">
+      <div class="col span-4">
+        <LabeledSelect
+          v-model:value="authMethod"
+          label-key="driver.opentelekomcloud.auth.fields.authMethod"
+          :options="[
+            { label: 'Username / Password', value: 'password' },
+            { label: 'Access Key / Secret Key (AK/SK)', value: 'aksk' },
+          ]"
+          :searchable="false"
+        />
+      </div>
+    </div>
+
+    <!-- Region + derived Auth URL -->
+    <div class="row mt-20">
       <div class="col span-4">
         <LabeledSelect
           v-model:value="region"
@@ -350,46 +410,76 @@ export default {
       </div>
     </div>
 
-    <!-- Domain Name row full width -->
-    <div class="row mt-20">
-      <div class="col span-12">
-        <LabeledInput
-          :value="value.decodedData.domainName"
-          label-key="driver.opentelekomcloud.auth.fields.domainName"
-          placeholder-key="driver.opentelekomcloud.auth.placeholders.domainName"
-          type="text"
-          :mode="mode"
-          @input="onDomainNameInput"
-        />
+    <!-- Password auth fields -->
+    <template v-if="authMethod === 'password'">
+      <!-- Domain Name row full width -->
+      <div class="row mt-20">
+        <div class="col span-12">
+          <LabeledInput
+            :value="value.decodedData.domainName"
+            label-key="driver.opentelekomcloud.auth.fields.domainName"
+            placeholder-key="driver.opentelekomcloud.auth.placeholders.domainName"
+            type="text"
+            :mode="mode"
+            @input="onDomainNameInput"
+          />
+        </div>
       </div>
-    </div>
 
-    <!-- Username and Password row -->
-    <div class="row mt-20">
-      <div class="col span-6">
-        <LabeledInput
-          :value="value.decodedData.username"
-          class="mt-20 md:mt-0"
-          label-key="driver.opentelekomcloud.auth.fields.username"
-          placeholder-key="driver.opentelekomcloud.auth.placeholders.username"
-          type="text"
-          :mode="mode"
-          @input="onUsernameInput"
-        />
+      <!-- Username and Password row -->
+      <div class="row mt-20">
+        <div class="col span-6">
+          <LabeledInput
+            :value="value.decodedData.username"
+            label-key="driver.opentelekomcloud.auth.fields.username"
+            placeholder-key="driver.opentelekomcloud.auth.placeholders.username"
+            type="text"
+            :mode="mode"
+            @input="onUsernameInput"
+          />
+        </div>
       </div>
-    </div>
-    <div class="row mt-20">
-      <div class="col span-6">
-        <LabeledInput
-          :value="value.decodedData.password"
-          label-key="driver.opentelekomcloud.auth.fields.password"
-          placeholder-key="driver.opentelekomcloud.auth.placeholders.password"
-          type="password"
-          :mode="mode"
-          @input="onPasswordInput"
-        />
+      <div class="row mt-20">
+        <div class="col span-6">
+          <LabeledInput
+            :value="value.decodedData.password"
+            label-key="driver.opentelekomcloud.auth.fields.password"
+            placeholder-key="driver.opentelekomcloud.auth.placeholders.password"
+            type="password"
+            :mode="mode"
+            @input="onPasswordInput"
+          />
+        </div>
       </div>
-    </div>
+    </template>
+
+    <!-- AK/SK auth fields -->
+    <template v-if="authMethod === 'aksk'">
+      <div class="row mt-20">
+        <div class="col span-6">
+          <LabeledInput
+            :value="value.decodedData.accessKey"
+            label-key="driver.opentelekomcloud.auth.fields.accessKey"
+            placeholder-key="driver.opentelekomcloud.auth.placeholders.accessKey"
+            type="text"
+            :mode="mode"
+            @input="onAccessKeyInput"
+          />
+        </div>
+      </div>
+      <div class="row mt-20">
+        <div class="col span-6">
+          <LabeledInput
+            :value="value.decodedData.secretKey"
+            label-key="driver.opentelekomcloud.auth.fields.secretKey"
+            placeholder-key="driver.opentelekomcloud.auth.placeholders.secretKey"
+            type="password"
+            :mode="mode"
+            @input="onSecretKeyInput"
+          />
+        </div>
+      </div>
+    </template>
 
     <!-- Authenticate button + edit -->
     <BusyButton

@@ -84,20 +84,28 @@ export default {
       this.credential = null;
     }
 
-    // Populate basic auth fields from the cloud credential config (without password)
+    // Populate basic auth fields from the cloud credential config and annotations
     const credCfg = this.credential?.opentelekomcloudcredentialConfig || {};
+    const ann = this.credential?.annotations || {};
 
-    this.username = credCfg.username || '';
-    this.domainName = credCfg.domainName || '';
-    this.projectName = credCfg.projectName || '';
-    this.region = credCfg.region || '';
-    this.endpoint = credCfg.authUrl || '';
+    // credentialConfig fields may not include all custom fields, so fall back to annotations
+    this.authMethod = credCfg.authMethod || ann['opentelekomcloud.cattle.io/authMethod'] || 'password';
+    this.username = credCfg.username || ann['opentelekomcloud.cattle.io/username'] || '';
+    this.domainName = credCfg.domainName || ann['opentelekomcloud.cattle.io/domainName'] || '';
+    this.projectName = credCfg.projectName || ann['opentelekomcloud.cattle.io/projectName'] || '';
+    this.projectId = credCfg.projectId || ann['opentelekomcloud.cattle.io/projectId'] || '';
+    this.region = credCfg.region || ann['opentelekomcloud.cattle.io/region'] || '';
+    this.endpoint = credCfg.authUrl || ann['opentelekomcloud.cattle.io/authUrl'] || '';
+    this.accessKey = credCfg.accessKey || ann['opentelekomcloud.cattle.io/accessKey'] || '';
+    this.secretKey = credCfg.secretKey || ann['opentelekomcloud.cattle.io/secretKey'] || '';
 
     // Try and get the secret for the Cloud Credential as we need the plain-text password
     try {
       const id = this.credentialId.replace(':', '/');
       const secret = await this.$store.dispatch('management/find', { type: SECRET, id });
       const credPassword = secret.data['opentelekomcloudcredentialConfig-password'];
+      const credAccessKey = secret.data['opentelekomcloudcredentialConfig-accessKey'];
+      const credSecretKey = secret.data['opentelekomcloudcredentialConfig-secretKey'];
 
       if (credPassword) {
         this.password = atob(credPassword);
@@ -105,6 +113,13 @@ export default {
       } else {
         this.password = '';
         this.havePassword = false;
+      }
+
+      if (credAccessKey) {
+        this.accessKey = atob(credAccessKey);
+      }
+      if (credSecretKey) {
+        this.secretKey = atob(credSecretKey);
       }
 
       this.ready = true;
@@ -119,10 +134,14 @@ export default {
 
     const otc = new OpenTelekomCloud(this.$store, {
       endpoint:    this.endpoint,
+      authMethod:  this.authMethod,
       domainName:  this.domainName,
       username:    this.username,
       password:    this.password,
+      accessKey:   this.accessKey,
+      secretKey:   this.secretKey,
       projectName: this.projectName,
+      projectId:   this.projectId,
       region:      this.region,
     });
 
@@ -163,13 +182,17 @@ export default {
       authenticating:      false,
       ready:               false,
       otc:                 null,
+      authMethod:          'password',
       username:            '',
       endpoint:            '',
       domainName:          '',
       projectName:         '',
+      projectId:           '',
       region:              '',
       password:            null,
       havePassword:        false,
+      accessKey:           '',
+      secretKey:           '',
       flavors:             initOptions(),
       images:              initOptions(),
       keyPairs:            initOptions(),
@@ -271,16 +294,27 @@ export default {
     syncValue() {
       // Copy auth values from the Cloud Credential into the machine config, so they are
       // passed as flags (opentelekomcloud-*) to the docker-machine driver.
-      // These fields are not shown in the UI, but are required for the driver to authenticate.
+      // Only pass fields that the Go driver recognizes as valid flags.
       this.value.authUrl = this.endpoint;
       this.value.domainName = this.domainName;
       this.value.username = this.username;
-      this.value.projectName = this.projectName;
       this.value.region = this.region;
+
+      if (this.authMethod === 'aksk') {
+        this.value.projectName = '';
+        this.value.projectId = this.projectId;
+      } else {
+        this.value.projectName = this.projectName;
+        this.value.projectId = '';
+      }
 
       if (this.havePassword && this.password) {
         this.value.password = this.password;
       }
+
+      this.value.authMethod = this.authMethod;
+      this.value.accessKey = this.accessKey;
+      this.value.secretKey = this.secretKey;
       // Copy the values from the form to the correct places on the value
       this.value.availabilityZone = this.availabilityZones.selected?.name;
       this.value.flavorName = this.flavors.selected?.name;
