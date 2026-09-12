@@ -13,9 +13,10 @@ import { OpenTelekomCloud } from '../opentelekomcloud.ts';
 import {
   NETWORK_POLICY_ANNOTATION,
   NETWORK_ANNOTATION,
+  TCLOUD_PROVIDER_ID,
   TCLOUD_NETWORK_TYPE,
+  UI_PROVIDER_ANNOTATION,
   clearSharedNetworkContext,
-  nodeCount,
   setSharedNetworkContext,
 } from '../sharedNetwork';
 import {
@@ -208,7 +209,9 @@ export default {
   data() {
     const annotations = this.cluster?.metadata?.annotations || {};
     const hasExistingNetwork = this.machinePools.some((entry) => entry.config?.vpcId && entry.config?.subnetId && entry.config?.secGroups);
-    const defaultNetworkPolicy = this.isCreate ? 'Managed' : hasExistingNetwork ? 'Observe' : 'Adopt';
+    const annotatedPolicy = annotations[NETWORK_POLICY_ANNOTATION];
+    const defaultNetworkPolicy = hasExistingNetwork ? 'Observe' : 'Managed';
+    const visibleNetworkPolicy = annotatedPolicy === 'Observe' ? 'Observe' : annotatedPolicy === 'Managed' ? 'Managed' : defaultNetworkPolicy;
 
     return {
       authenticating:      false,
@@ -243,7 +246,7 @@ export default {
       creatingSubnet:      false,
       createSubnetError:   null,
       initialSubnet:       null,
-      networkPolicy:       annotations[NETWORK_POLICY_ANNOTATION] || defaultNetworkPolicy,
+      networkPolicy:       visibleNetworkPolicy,
       managedVpcCIDR:      annotations['infrastructure.otc.t-systems.com/vpc-cidr'] || '192.168.0.0/16',
       managedSubnetCIDR:   annotations['infrastructure.otc.t-systems.com/subnet-cidr'] || '192.168.0.0/24',
       managedGatewayIP:    annotations['infrastructure.otc.t-systems.com/gateway-ip'] || '192.168.0.1',
@@ -257,9 +260,7 @@ export default {
     },
 
     sharedNetworkRequired() {
-      const alreadyShared = !!this.cluster?.metadata?.annotations?.[NETWORK_ANNOTATION];
-
-      return alreadyShared || nodeCount(this.machinePools) > 1;
+      return true;
     },
 
     controllerAvailable() {
@@ -267,11 +268,24 @@ export default {
     },
 
     managedNetwork() {
-      return this.networkPolicy === 'Managed';
+      return this.networkPolicy === 'Managed' && !this.adoptingNetwork;
     },
 
     adoptingNetwork() {
-      return this.networkPolicy === 'Adopt';
+      if (this.networkPolicy !== 'Managed' || !this.cluster?.metadata?.creationTimestamp) {
+        return false;
+      }
+
+      const annotations = this.cluster.metadata?.annotations || {};
+
+      if (annotations[NETWORK_POLICY_ANNOTATION] === 'Adopt') {
+        return true;
+      }
+
+      const hasSharedNetwork = !!annotations[NETWORK_ANNOTATION];
+      const hasConfiguredNetwork = this.activeMachinePools.some((entry) => entry.config?.vpcId && entry.config?.subnetId && entry.config?.secGroups);
+
+      return !hasSharedNetwork && !hasConfiguredNetwork;
     },
 
     controllerOwnedNetwork() {
@@ -475,7 +489,9 @@ export default {
       this.cluster.metadata.annotations = this.cluster.metadata.annotations || {};
       const annotations = this.cluster.metadata.annotations;
 
-      annotations[NETWORK_POLICY_ANNOTATION] = this.networkPolicy;
+      const effectiveNetworkPolicy = this.adoptingNetwork ? 'Adopt' : this.networkPolicy;
+
+      annotations[NETWORK_POLICY_ANNOTATION] = effectiveNetworkPolicy;
       annotations['infrastructure.otc.t-systems.com/vpc-cidr'] = this.managedVpcCIDR;
       annotations['infrastructure.otc.t-systems.com/subnet-cidr'] = this.managedSubnetCIDR;
       annotations['infrastructure.otc.t-systems.com/gateway-ip'] = this.managedGatewayIP;
@@ -484,7 +500,7 @@ export default {
       setSharedNetworkContext(this.cluster, {
         machinePools:  this.machinePools,
         credentialId: this.credentialId,
-        policy:       this.networkPolicy,
+        policy:       effectiveNetworkPolicy,
         region:       this.region,
         projectName:  this.projectName,
         vpc:          this.managedNetwork ? {
@@ -552,6 +568,10 @@ export default {
     },
 
     syncValue() {
+      this.cluster.metadata = this.cluster.metadata || {};
+      this.cluster.metadata.annotations = this.cluster.metadata.annotations || {};
+      this.cluster.metadata.annotations[UI_PROVIDER_ANNOTATION] = TCLOUD_PROVIDER_ID;
+
       // Copy auth values from the Cloud Credential into the machine config, so they are
       // passed as flags (opentelekomcloud-*) to the docker-machine driver.
       // Only pass fields that the Go driver recognizes as valid flags.
@@ -713,7 +733,7 @@ export default {
         v-if="sharedNetworkRequired && adoptingNetwork"
         color="info"
       >
-        The controller will adopt the oldest ready machine's driver-created
+        The controller will adopt the oldest machine's driver-created
         VPC, subnet, and security group before Rancher provisions more nodes.
       </Banner>
       <div class="opentelekomcloud-config">
@@ -739,7 +759,6 @@ export default {
             v-model:value="networkPolicy"
             label="Shared Network Ownership"
             :options="networkPolicies"
-            :placeholder="adoptingNetwork ? 'Automatic adoption; select to override' : ''"
             :disabled="busy"
             :searchable="false"
           />

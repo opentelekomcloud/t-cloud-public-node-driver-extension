@@ -2,7 +2,9 @@ import type { IClusterProvisioner, RegisterClusterSaveHook } from '@shell/core/t
 import {
   NETWORK_ANNOTATION,
   NETWORK_POLICY_ANNOTATION,
+  TCLOUD_PROVIDER_ID,
   TCLOUD_NETWORK_TYPE,
+  UI_PROVIDER_ANNOTATION,
   activePools,
   credentialSecretReference,
   getSharedNetworkContext,
@@ -50,6 +52,9 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   }
 
   registerSaveHooks(registerBeforeHook: RegisterClusterSaveHook, _registerAfterHook: RegisterClusterSaveHook, cluster: any) {
+    cluster.metadata.annotations = cluster.metadata.annotations || {};
+    cluster.metadata.annotations[UI_PROVIDER_ANNOTATION] = TCLOUD_PROVIDER_ID;
+
     // Rancher saves machine-pool configs at priority 1. Use a truthy, lower
     // priority because Rancher's hook registry normalizes priority 0 to 99.
     registerBeforeHook(() => this.prepareSharedNetwork(cluster), 'prepare-tcloud-shared-network', -1, this);
