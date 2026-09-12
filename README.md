@@ -27,6 +27,12 @@ The controller
 discovers the driver-created network from Rancher's machine state, adds the
 required CNI rules, and assumes cleanup responsibility.
 
+For Managed networks, SSH Allowed CIDRs remain editable after cluster creation.
+The extension rejects invalid or duplicate IPv4 CIDRs and updates the network
+resource. The controller adds new SSH access first and then removes obsolete
+rules from its previously applied set; unrelated security-group rules are not
+changed. Existing/Observe networks are never pruned.
+
 Managed mode is disabled when the
 `tcloudclusternetworks.infrastructure.otc.t-systems.com` CRD is unavailable.
 Install the

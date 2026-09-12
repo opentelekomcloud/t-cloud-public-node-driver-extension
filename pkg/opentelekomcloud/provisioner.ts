@@ -27,6 +27,13 @@ function readyCondition(resource: any): any {
   return resource?.status?.conditions?.find((condition: any) => condition.type === 'Ready');
 }
 
+function sameStrings(left: string[] = [], right: string[] = []): boolean {
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+
+  return sortedLeft.length === sortedRight.length && sortedLeft.every((value, index) => value === sortedRight[index]);
+}
+
 export default class TCloudProvisioner implements IClusterProvisioner {
   id = 'opentelekomcloud';
 
@@ -98,8 +105,21 @@ export default class TCloudProvisioner implements IClusterProvisioner {
     if (!resource) {
       resource = await this.dispatch('management/create', this.networkResource(cluster, name, namespace, context));
       resource = await resource.save();
-    } else if (resource.spec?.managementPolicy !== context.policy) {
-      throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
+    } else {
+      if (resource.spec?.managementPolicy !== context.policy) {
+        throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
+      }
+      if (context.policy === 'Managed' || context.policy === 'Adopt') {
+        const securityGroup = resource.spec.network.securityGroup;
+        const desiredCIDRs = context.securityGroup.sshAllowedCIDRs;
+        const desiredCNI = context.securityGroup.cni || 'canal';
+
+        if (!sameStrings(securityGroup.sshAllowedCIDRs, desiredCIDRs) || securityGroup.cni !== desiredCNI) {
+          securityGroup.sshAllowedCIDRs = desiredCIDRs;
+          securityGroup.cni = desiredCNI;
+          resource = await resource.save();
+        }
+      }
     }
 
     annotations[NETWORK_ANNOTATION] = name;

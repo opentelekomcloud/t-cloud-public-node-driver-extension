@@ -185,6 +185,7 @@ export default {
       }
 
       this.authenticating = false;
+      this.emitValidationState();
 
       otc.getFlavors(this.flavors, this.value?.flavorName);
       otc.getImages(this.images, this.value?.imageName);
@@ -211,7 +212,7 @@ export default {
     const hasExistingNetwork = this.machinePools.some((entry) => entry.config?.vpcId && entry.config?.subnetId && entry.config?.secGroups);
     const annotatedPolicy = annotations[NETWORK_POLICY_ANNOTATION];
     const defaultNetworkPolicy = hasExistingNetwork ? 'Observe' : 'Managed';
-    const visibleNetworkPolicy = annotatedPolicy === 'Observe' ? 'Observe' : annotatedPolicy === 'Managed' ? 'Managed' : defaultNetworkPolicy;
+    const visibleNetworkPolicy = annotatedPolicy === 'Observe' ? 'Observe' : ['Managed', 'Adopt'].includes(annotatedPolicy) ? 'Managed' : defaultNetworkPolicy;
 
     return {
       authenticating:      false,
@@ -330,6 +331,7 @@ export default {
       this.$fetch();
     },
     'vpcs.selected'(newVpc) {
+      this.$nextTick(() => this.emitValidationState());
       if (newVpc === CREATE_NEW_NETWORK.VPC) {
         this.creatingVpc = true;
 
@@ -355,6 +357,7 @@ export default {
       }
     },
     'subnets.selected'(newSubnet) {
+      this.$nextTick(() => this.emitValidationState());
       if (newSubnet === CREATE_NEW_NETWORK.SUBNET) {
         this.creatingSubnet = true;
 
@@ -370,6 +373,7 @@ export default {
       }
     },
     'securityGroups.selected'(newSecurityGroup) {
+      this.$nextTick(() => this.emitValidationState());
       if (newSecurityGroup?.name) {
         this.value.secGroups = newSecurityGroup.name;
       }
@@ -384,11 +388,38 @@ export default {
     },
     networkPolicy() {
       this.syncSharedNetworkContext();
+      this.emitValidationState();
+    },
+    managedVpcCIDR() {
+      this.networkSettingsChanged();
+    },
+    managedSubnetCIDR() {
+      this.networkSettingsChanged();
+    },
+    managedGatewayIP() {
+      this.networkSettingsChanged();
+    },
+    managedSSHCIDRs() {
+      this.networkSettingsChanged();
+    },
+    'cluster.spec.rkeConfig.machineGlobalConfig.cni'() {
+      this.networkSettingsChanged();
     },
   },
 
   methods: {
     stringify,
+
+    networkSettingsChanged() {
+      this.syncSharedNetworkContext();
+      this.emitValidationState();
+    },
+
+    emitValidationState() {
+      const valid = this.ready && !this.authenticating && this.validateNetwork().length === 0;
+
+      this.$emit('validationChanged', valid);
+    },
 
     applySharedNetworkConfig() {
       const config = this.sharedNetworkConfig;
@@ -433,6 +464,7 @@ export default {
 
       if (this.controllerOwnedNetwork) {
         const cni = this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal';
+        const sshAllowedCIDRs = this.managedSSHAllowedCIDRs();
 
         if (this.managedNetwork && (!this.managedVpcCIDR || !this.managedSubnetCIDR || !this.managedGatewayIP)) {
           errors.push('Managed shared networking requires VPC CIDR, subnet CIDR, and gateway IP.');
@@ -443,8 +475,14 @@ export default {
         if (this.managedNetwork && this.managedSubnetCIDR && !isValidCidr(this.managedSubnetCIDR)) {
           errors.push('Subnet CIDR must use IPv4 CIDR notation.');
         }
-        if (!this.managedSSHCIDRs.split(',').some((cidr) => cidr.trim())) {
+        if (!sshAllowedCIDRs.length) {
           errors.push('Controller-owned shared networking requires at least one SSH source CIDR.');
+        }
+        if (sshAllowedCIDRs.some((cidr) => !isValidCidr(cidr))) {
+          errors.push('Every SSH source must use valid IPv4 CIDR notation.');
+        }
+        if (new Set(sshAllowedCIDRs).size !== sshAllowedCIDRs.length) {
+          errors.push('SSH Allowed CIDRs must not contain duplicates.');
         }
         if (!['canal', 'flannel', 'calico'].includes(cni)) {
           errors.push(`Controller-owned T-Cloud Public security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
@@ -495,7 +533,9 @@ export default {
       annotations['infrastructure.otc.t-systems.com/vpc-cidr'] = this.managedVpcCIDR;
       annotations['infrastructure.otc.t-systems.com/subnet-cidr'] = this.managedSubnetCIDR;
       annotations['infrastructure.otc.t-systems.com/gateway-ip'] = this.managedGatewayIP;
-      annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] = this.managedSSHCIDRs;
+      const sshAllowedCIDRs = this.managedSSHAllowedCIDRs();
+
+      annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] = sshAllowedCIDRs.join(',');
 
       setSharedNetworkContext(this.cluster, {
         machinePools:  this.machinePools,
@@ -522,12 +562,16 @@ export default {
         securityGroup: this.controllerOwnedNetwork ? {
           name:            `${ this.cluster.metadata.name }-rke2`,
           cni:             this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal',
-          sshAllowedCIDRs: this.managedSSHCIDRs.split(',').map((cidr) => cidr.trim()).filter(Boolean),
+          sshAllowedCIDRs,
         } : {
           id:   this.securityGroups.selected?.id,
           name: this.securityGroups.selected?.name,
         },
       });
+    },
+
+    managedSSHAllowedCIDRs() {
+      return this.managedSSHCIDRs.split(',').map((cidr) => cidr.trim()).filter(Boolean);
     },
 
     initForViewMode() {
