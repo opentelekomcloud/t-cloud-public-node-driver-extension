@@ -11,6 +11,7 @@ import {
   networkResourceName,
 } from './sharedNetwork';
 
+const providerIcon = require('./assets/icon-opentelekomcloud.svg');
 const READY_TIMEOUT_MS = 10 * 60 * 1000;
 const POLL_INTERVAL_MS = 2000;
 
@@ -38,6 +39,8 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   id = 'opentelekomcloud';
 
   label = 'T-Cloud Public';
+
+  icon = providerIcon;
 
   detailTabs = {
     machines:     true,
