@@ -60,8 +60,9 @@ function gatewayFromCidr(cidr: string): string {
 }
 
 const CREATE_NEW_NETWORK = {
-  VPC:    '__create_new_vpc__',
-  SUBNET: '__create_new_subnet__',
+  VPC:            '__create_new_vpc__',
+  SUBNET:         '__create_new_subnet__',
+  SECURITY_GROUP: '__create_new_security_group__',
 } as const;
 
 export {

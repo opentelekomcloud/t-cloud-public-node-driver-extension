@@ -196,7 +196,12 @@ export default {
 
       this.initialSubnet = this.value?.subnetId || this.value?.subnetName || sharedConfig?.subnetId || sharedConfig?.subnetName;
 
-      otc.getSecurityGroups(this.securityGroups, securityGroup);
+      otc.getSecurityGroups(this.securityGroups, securityGroup).then(() => {
+        addCreateNewOption(this.securityGroups, 'Security Group', CREATE_NEW_NETWORK.SECURITY_GROUP);
+        if (this.createSharedSecurityGroup) {
+          this.securityGroups.selected = CREATE_NEW_NETWORK.SECURITY_GROUP;
+        }
+      });
       otc.getFloatingIpPools(this.floatingIpPools, this.value?.floatingipPool);
       otc.getVpcs(this.vpcs, vpc).then(() => {
         addCreateNewOption(this.vpcs, 'VPC', CREATE_NEW_NETWORK.VPC);
@@ -215,43 +220,45 @@ export default {
     const visibleNetworkPolicy = annotatedPolicy === 'Observe' ? 'Observe' : ['Managed', 'Adopt'].includes(annotatedPolicy) ? 'Managed' : defaultNetworkPolicy;
 
     return {
-      authenticating:      false,
-      ready:               false,
-      otc:                 null,
-      authMethod:          'password',
-      username:            '',
-      endpoint:            '',
-      domainName:          '',
-      projectName:         '',
-      projectId:           '',
-      region:              '',
-      password:            null,
-      havePassword:        false,
-      accessKey:           '',
-      secretKey:           '',
-      flavors:             initOptions(),
-      images:              initOptions(),
-      keyPairs:            initOptions(),
-      securityGroups:      initOptions(),
-      floatingIpPools:     initOptions(),
-      vpcs:                initOptions(),
-      subnets:             initOptions(),
-      availabilityZones:   initOptions(),
-      sshUser:             this.value?.sshUser || 'ubuntu',
-      privateKeyFile:      this.value?.privateKeyFile || '',
-      filename:            this.value?.privateKeyFile ? 'Private Key Provided' : '',
-      privateKeyFieldType: 'password',
-      errors:              null,
-      creatingVpc:         false,
-      createVpcError:      null,
-      creatingSubnet:      false,
-      createSubnetError:   null,
-      initialSubnet:       null,
-      networkPolicy:       visibleNetworkPolicy,
-      managedVpcCIDR:      annotations['infrastructure.otc.t-systems.com/vpc-cidr'] || '192.168.0.0/16',
-      managedSubnetCIDR:   annotations['infrastructure.otc.t-systems.com/subnet-cidr'] || '192.168.0.0/24',
-      managedGatewayIP:    annotations['infrastructure.otc.t-systems.com/gateway-ip'] || '192.168.0.1',
-      managedSSHCIDRs:     annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] || '',
+      authenticating:            false,
+      ready:                     false,
+      otc:                       null,
+      authMethod:                'password',
+      username:                  '',
+      endpoint:                  '',
+      domainName:                '',
+      projectName:               '',
+      projectId:                 '',
+      region:                    '',
+      password:                  null,
+      havePassword:              false,
+      accessKey:                 '',
+      secretKey:                 '',
+      flavors:                   initOptions(),
+      images:                    initOptions(),
+      keyPairs:                  initOptions(),
+      securityGroups:            initOptions(),
+      floatingIpPools:           initOptions(),
+      vpcs:                      initOptions(),
+      subnets:                   initOptions(),
+      availabilityZones:         initOptions(),
+      sshUser:                   this.value?.sshUser || 'ubuntu',
+      privateKeyFile:            this.value?.privateKeyFile || '',
+      filename:                  this.value?.privateKeyFile ? 'Private Key Provided' : '',
+      privateKeyFieldType:       'password',
+      errors:                    null,
+      creatingVpc:               false,
+      createVpcError:            null,
+      creatingSubnet:            false,
+      createSubnetError:         null,
+      initialSubnet:             null,
+      networkPolicy:             visibleNetworkPolicy,
+      managedVpcCIDR:            annotations['infrastructure.otc.t-systems.com/vpc-cidr'] || '192.168.0.0/16',
+      managedSubnetCIDR:         annotations['infrastructure.otc.t-systems.com/subnet-cidr'] || '192.168.0.0/24',
+      managedGatewayIP:          annotations['infrastructure.otc.t-systems.com/gateway-ip'] || '192.168.0.1',
+      managedSSHCIDRs:           annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] || '0.0.0.0/0',
+      managedSecurityGroupName:  annotations['infrastructure.otc.t-systems.com/security-group-name'] || `${ this.cluster?.metadata?.name || 'cluster' }-rke2`,
+      createSharedSecurityGroup: annotations['infrastructure.otc.t-systems.com/security-group-policy'] === 'Managed' && annotatedPolicy === 'Observe',
     };
   },
 
@@ -293,6 +300,22 @@ export default {
       return this.managedNetwork || this.adoptingNetwork;
     },
 
+    controllerOwnedSecurityGroup() {
+      return this.controllerOwnedNetwork || (this.networkPolicy === 'Observe' && this.createSharedSecurityGroup);
+    },
+
+    cniSecurityGroupPorts() {
+      const cni = this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal';
+      const common = ['TCP 2379-2381', 'TCP 6443', 'TCP 9345', 'TCP 10250', 'TCP 30000-32767'];
+      const byCNI = {
+        canal:   ['UDP 8472', 'TCP 9099'],
+        flannel: ['UDP 4789'],
+        calico:  ['TCP 179', 'UDP 4789', 'TCP 5473', 'TCP 9098-9099'],
+      };
+
+      return [...common, ...(byCNI[cni] || [])];
+    },
+
     networkPolicies() {
       return [
         {
@@ -315,7 +338,7 @@ export default {
     },
 
     sharedNetworkMismatch() {
-      if (!this.sharedNetworkRequired || this.controllerOwnedNetwork) {
+      if (!this.sharedNetworkRequired || this.controllerOwnedSecurityGroup) {
         return false;
       }
 
@@ -373,10 +396,13 @@ export default {
       }
     },
     'securityGroups.selected'(newSecurityGroup) {
-      this.$nextTick(() => this.emitValidationState());
+      this.createSharedSecurityGroup = newSecurityGroup === CREATE_NEW_NETWORK.SECURITY_GROUP;
       if (newSecurityGroup?.name) {
         this.value.secGroups = newSecurityGroup.name;
+      } else if (this.createSharedSecurityGroup) {
+        this.value.secGroups = '';
       }
+      this.networkSettingsChanged();
     },
     sharedNetworkRequired(required) {
       if (required) {
@@ -400,6 +426,9 @@ export default {
       this.networkSettingsChanged();
     },
     managedSSHCIDRs() {
+      this.networkSettingsChanged();
+    },
+    managedSecurityGroupName() {
       this.networkSettingsChanged();
     },
     'cluster.spec.rkeConfig.machineGlobalConfig.cni'() {
@@ -462,18 +491,24 @@ export default {
         errors.push('Shared networking requires the T-Cloud Public Rancher Network Controller. Install it and reload Rancher.');
       }
 
-      if (this.controllerOwnedNetwork) {
+      if (this.managedNetwork) {
+        if (!this.managedVpcCIDR || !this.managedSubnetCIDR || !this.managedGatewayIP) {
+          errors.push('Managed shared networking requires VPC CIDR, subnet CIDR, and gateway IP.');
+        }
+        if (this.managedVpcCIDR && !isValidCidr(this.managedVpcCIDR)) {
+          errors.push('VPC CIDR must use IPv4 CIDR notation.');
+        }
+        if (this.managedSubnetCIDR && !isValidCidr(this.managedSubnetCIDR)) {
+          errors.push('Subnet CIDR must use IPv4 CIDR notation.');
+        }
+      }
+
+      if (this.controllerOwnedSecurityGroup) {
         const cni = this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal';
         const sshAllowedCIDRs = this.managedSSHAllowedCIDRs();
 
-        if (this.managedNetwork && (!this.managedVpcCIDR || !this.managedSubnetCIDR || !this.managedGatewayIP)) {
-          errors.push('Managed shared networking requires VPC CIDR, subnet CIDR, and gateway IP.');
-        }
-        if (this.managedNetwork && this.managedVpcCIDR && !isValidCidr(this.managedVpcCIDR)) {
-          errors.push('VPC CIDR must use IPv4 CIDR notation.');
-        }
-        if (this.managedNetwork && this.managedSubnetCIDR && !isValidCidr(this.managedSubnetCIDR)) {
-          errors.push('Subnet CIDR must use IPv4 CIDR notation.');
+        if (this.createSharedSecurityGroup && !this.managedSecurityGroupName.trim()) {
+          errors.push('A name is required for the managed security group.');
         }
         if (!sshAllowedCIDRs.length) {
           errors.push('Controller-owned shared networking requires at least one SSH source CIDR.');
@@ -488,10 +523,12 @@ export default {
           errors.push(`Controller-owned T-Cloud Public security-group rules currently support canal, flannel, or calico, not ${ cni }.`);
         }
 
-        return errors;
+        if (this.controllerOwnedNetwork) {
+          return errors;
+        }
       }
 
-      const incompletePool = this.activeMachinePools.some((entry) => !entry.config?.vpcId || !entry.config?.subnetId || !entry.config?.secGroups);
+      const incompletePool = this.activeMachinePools.some((entry) => !entry.config?.vpcId || !entry.config?.subnetId || (!this.createSharedSecurityGroup && !entry.config?.secGroups));
 
       if (incompletePool) {
         errors.push('Every active machine pool must select a shared VPC, subnet, and security group.');
@@ -536,6 +573,8 @@ export default {
       const sshAllowedCIDRs = this.managedSSHAllowedCIDRs();
 
       annotations['infrastructure.otc.t-systems.com/ssh-allowed-cidrs'] = sshAllowedCIDRs.join(',');
+      annotations['infrastructure.otc.t-systems.com/security-group-policy'] = this.controllerOwnedSecurityGroup ? 'Managed' : 'Observe';
+      annotations['infrastructure.otc.t-systems.com/security-group-name'] = this.controllerOwnedSecurityGroup ? this.networkPolicy === 'Observe' && this.createSharedSecurityGroup ? this.managedSecurityGroupName.trim() : `${ this.cluster.metadata.name }-rke2` : '';
 
       setSharedNetworkContext(this.cluster, {
         machinePools:  this.machinePools,
@@ -559,13 +598,15 @@ export default {
           id:   this.subnets.selected?.id,
           name: this.subnets.selected?.name,
         },
-        securityGroup: this.controllerOwnedNetwork ? {
-          name:            `${ this.cluster.metadata.name }-rke2`,
-          cni:             this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal',
+        securityGroup: this.controllerOwnedSecurityGroup ? {
+          name:             this.networkPolicy === 'Observe' && this.createSharedSecurityGroup ? this.managedSecurityGroupName.trim() : `${ this.cluster.metadata.name }-rke2`,
+          managementPolicy: 'Managed',
+          cni:              this.cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal',
           sshAllowedCIDRs,
         } : {
-          id:   this.securityGroups.selected?.id,
-          name: this.securityGroups.selected?.name,
+          id:               this.securityGroups.selected?.id,
+          name:             this.securityGroups.selected?.name,
+          managementPolicy: 'Observe',
         },
       });
     },
@@ -919,14 +960,54 @@ export default {
         <div class="col span-6">
           <LabeledSelect
             v-model:value="securityGroups.selected"
-            label="Security Groups"
+            label="Security Group"
             :options="securityGroups.options"
             :disabled="!securityGroups.enabled || busy"
             :loading="securityGroups.busy"
+            :required="true"
             :searchable="false"
           />
         </div>
       </div>
+      <template v-if="createSharedSecurityGroup && !controllerOwnedNetwork">
+        <div class="row mt-10">
+          <div class="col span-6">
+            <LabeledInput
+              v-model:value="managedSecurityGroupName"
+              label="New Security Group Name"
+              :mode="mode"
+              :disabled="busy || !!cluster.metadata?.creationTimestamp"
+              :required="true"
+            />
+          </div>
+          <div class="col span-6">
+            <LabeledInput
+              v-model:value="managedSSHCIDRs"
+              label="SSH Allowed CIDRs (comma-separated)"
+              placeholder="203.0.113.10/32"
+              :mode="mode"
+              :disabled="busy"
+              :required="true"
+            />
+          </div>
+        </div>
+        <Banner color="info">
+          The controller will create and manage this security group. The
+          {{ cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal' }}
+          template includes: {{ cniSecurityGroupPorts.join(', ') }}, plus TCP 22
+          for every SSH Allowed CIDR.
+        </Banner>
+      </template>
+      <Banner
+        v-if="!controllerOwnedNetwork && !createSharedSecurityGroup && securityGroups.selected"
+        color="info"
+      >
+        Ensure the existing security group allows intra-cluster traffic for
+        {{ cluster.spec?.rkeConfig?.machineGlobalConfig?.cni || 'canal' }}:
+        {{ cniSecurityGroupPorts.join(', ') }}. Also allow TCP 22 from the SSH
+        source CIDRs required by your administrators. The controller will not
+        modify this existing security group.
+      </Banner>
       <div class="row mt-10">
         <div class="col span-6">
           <LabeledSelect

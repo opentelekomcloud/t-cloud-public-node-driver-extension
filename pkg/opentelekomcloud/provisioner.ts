@@ -109,16 +109,24 @@ export default class TCloudProvisioner implements IClusterProvisioner {
       if (resource.spec?.managementPolicy !== context.policy) {
         throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
       }
-      if (context.policy === 'Managed' || context.policy === 'Adopt') {
+      if (context.securityGroup.managementPolicy === 'Managed') {
         const securityGroup = resource.spec.network.securityGroup;
         const desiredCIDRs = context.securityGroup.sshAllowedCIDRs;
         const desiredCNI = context.securityGroup.cni || 'canal';
+        const desiredName = context.securityGroup.name || `${ cluster.metadata.name }-rke2`;
 
-        if (!sameStrings(securityGroup.sshAllowedCIDRs, desiredCIDRs) || securityGroup.cni !== desiredCNI) {
+        if (securityGroup.managementPolicy === 'Observe') {
+          throw new Error(`The cluster network ${ id } already uses an existing security group; its ownership policy cannot be changed.`);
+        }
+        if (!sameStrings(securityGroup.sshAllowedCIDRs, desiredCIDRs) || securityGroup.cni !== desiredCNI || securityGroup.name !== desiredName) {
           securityGroup.sshAllowedCIDRs = desiredCIDRs;
           securityGroup.cni = desiredCNI;
+          securityGroup.name = desiredName;
+          securityGroup.managementPolicy = 'Managed';
           resource = await resource.save();
         }
+      } else if (resource.spec.network.securityGroup.managementPolicy === 'Managed') {
+        throw new Error(`The cluster network ${ id } already uses a controller-managed security group; its ownership policy cannot be changed.`);
       }
     }
 
@@ -159,13 +167,20 @@ export default class TCloudProvisioner implements IClusterProvisioner {
             availabilityZone: context.subnet.availabilityZone,
           } : adopt ? {} : { id: context.subnet.id },
           securityGroup: managed ? {
-            name:            context.securityGroup.name || `${ cluster.metadata.name }-rke2`,
-            cni:             context.securityGroup.cni || 'canal',
-            sshAllowedCIDRs: context.securityGroup.sshAllowedCIDRs,
+            name:             context.securityGroup.name || `${ cluster.metadata.name }-rke2`,
+            managementPolicy: 'Managed',
+            cni:              context.securityGroup.cni || 'canal',
+            sshAllowedCIDRs:  context.securityGroup.sshAllowedCIDRs,
           } : adopt ? {
-            cni:             context.securityGroup.cni || 'canal',
-            sshAllowedCIDRs: context.securityGroup.sshAllowedCIDRs,
-          } : { id: context.securityGroup.id },
+            managementPolicy: 'Managed',
+            cni:              context.securityGroup.cni || 'canal',
+            sshAllowedCIDRs:  context.securityGroup.sshAllowedCIDRs,
+          } : context.securityGroup.managementPolicy === 'Managed' ? {
+            name:             context.securityGroup.name || `${ cluster.metadata.name }-rke2`,
+            managementPolicy: 'Managed',
+            cni:              context.securityGroup.cni || 'canal',
+            sshAllowedCIDRs:  context.securityGroup.sshAllowedCIDRs,
+          } : { id: context.securityGroup.id, managementPolicy: 'Observe' },
         },
       },
     };

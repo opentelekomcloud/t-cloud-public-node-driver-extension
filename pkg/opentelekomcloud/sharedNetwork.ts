@@ -14,7 +14,7 @@ export interface SharedNetworkContext {
   projectName: string;
   vpc: { id?: string; name?: string; cidr?: string };
   subnet: { id?: string; name?: string; cidr?: string; gatewayIP?: string; availabilityZone?: string };
-  securityGroup: { id?: string; name?: string; sshAllowedCIDRs?: string[]; cni?: string };
+  securityGroup: { id?: string; name?: string; managementPolicy?: 'Managed' | 'Observe'; sshAllowedCIDRs?: string[]; cni?: string };
 }
 
 const contexts = new WeakMap<object, SharedNetworkContext>();
