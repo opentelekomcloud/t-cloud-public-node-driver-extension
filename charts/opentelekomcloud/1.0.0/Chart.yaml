@@ -9,7 +9,7 @@ annotations:
   catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
 apiVersion: v2
 appVersion: 1.0.0
-description: OpenTelekomCloud node driver extension plugin
+description: T-Cloud Public node driver extension plugin
 name: opentelekomcloud
 type: application
 version: 1.0.0
