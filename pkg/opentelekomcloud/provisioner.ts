@@ -2,12 +2,13 @@ import type { IClusterProvisioner, RegisterClusterSaveHook } from '@shell/core/t
 import {
   NETWORK_ANNOTATION,
   NETWORK_POLICY_ANNOTATION,
+  TCLOUD_PROVIDER_ID,
   TCLOUD_NETWORK_TYPE,
+  UI_PROVIDER_ANNOTATION,
   activePools,
   credentialSecretReference,
   getSharedNetworkContext,
   networkResourceName,
-  nodeCount,
 } from './sharedNetwork';
 
 const READY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -24,6 +25,13 @@ function sleep(milliseconds: number): Promise<void> {
 
 function readyCondition(resource: any): any {
   return resource?.status?.conditions?.find((condition: any) => condition.type === 'Ready');
+}
+
+function sameStrings(left: string[] = [], right: string[] = []): boolean {
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+
+  return sortedLeft.length === sortedRight.length && sortedLeft.every((value, index) => value === sortedRight[index]);
 }
 
 export default class TCloudProvisioner implements IClusterProvisioner {
@@ -51,6 +59,9 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   }
 
   registerSaveHooks(registerBeforeHook: RegisterClusterSaveHook, _registerAfterHook: RegisterClusterSaveHook, cluster: any) {
+    cluster.metadata.annotations = cluster.metadata.annotations || {};
+    cluster.metadata.annotations[UI_PROVIDER_ANNOTATION] = TCLOUD_PROVIDER_ID;
+
     // Rancher saves machine-pool configs at priority 1. Use a truthy, lower
     // priority because Rancher's hook registry normalizes priority 0 to 99.
     registerBeforeHook(() => this.prepareSharedNetwork(cluster), 'prepare-tcloud-shared-network', -1, this);
@@ -59,9 +70,7 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   private async prepareSharedNetwork(cluster: any): Promise<void> {
     const context = getSharedNetworkContext(cluster);
 
-    const alreadyShared = !!cluster.metadata?.annotations?.[NETWORK_ANNOTATION];
-
-    if (!context || (nodeCount(context.machinePools) <= 1 && !alreadyShared)) {
+    if (!context) {
       return;
     }
     if (!this.getters['management/schemaFor'](TCLOUD_NETWORK_TYPE)) {
@@ -96,8 +105,21 @@ export default class TCloudProvisioner implements IClusterProvisioner {
     if (!resource) {
       resource = await this.dispatch('management/create', this.networkResource(cluster, name, namespace, context));
       resource = await resource.save();
-    } else if (resource.spec?.managementPolicy !== context.policy) {
-      throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
+    } else {
+      if (resource.spec?.managementPolicy !== context.policy) {
+        throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
+      }
+      if (context.policy === 'Managed' || context.policy === 'Adopt') {
+        const securityGroup = resource.spec.network.securityGroup;
+        const desiredCIDRs = context.securityGroup.sshAllowedCIDRs;
+        const desiredCNI = context.securityGroup.cni || 'canal';
+
+        if (!sameStrings(securityGroup.sshAllowedCIDRs, desiredCIDRs) || securityGroup.cni !== desiredCNI) {
+          securityGroup.sshAllowedCIDRs = desiredCIDRs;
+          securityGroup.cni = desiredCNI;
+          resource = await resource.save();
+        }
+      }
     }
 
     annotations[NETWORK_ANNOTATION] = name;
@@ -111,6 +133,7 @@ export default class TCloudProvisioner implements IClusterProvisioner {
   private networkResource(cluster: any, name: string, namespace: string, context: any): any {
     const secret = credentialSecretReference(context.credentialId);
     const managed = context.policy === 'Managed';
+    const adopt = context.policy === 'Adopt';
 
     return {
       type:       TCLOUD_NETWORK_TYPE,
@@ -128,15 +151,18 @@ export default class TCloudProvisioner implements IClusterProvisioner {
           vpc: managed ? {
             name: context.vpc.name || cluster.metadata.name,
             cidr: context.vpc.cidr,
-          } : { id: context.vpc.id },
+          } : adopt ? {} : { id: context.vpc.id },
           subnet: managed ? {
             name:             context.subnet.name || `${ cluster.metadata.name }-subnet`,
             cidr:             context.subnet.cidr,
             gatewayIP:        context.subnet.gatewayIP,
             availabilityZone: context.subnet.availabilityZone,
-          } : { id: context.subnet.id },
+          } : adopt ? {} : { id: context.subnet.id },
           securityGroup: managed ? {
             name:            context.securityGroup.name || `${ cluster.metadata.name }-rke2`,
+            cni:             context.securityGroup.cni || 'canal',
+            sshAllowedCIDRs: context.securityGroup.sshAllowedCIDRs,
+          } : adopt ? {
             cni:             context.securityGroup.cni || 'canal',
             sshAllowedCIDRs: context.securityGroup.sshAllowedCIDRs,
           } : { id: context.securityGroup.id },
@@ -160,6 +186,11 @@ export default class TCloudProvisioner implements IClusterProvisioner {
         return resource;
       }
       if (condition?.status === 'False') {
+        if (resource.spec?.managementPolicy === 'Adopt' && condition.reason === 'NetworkAdoptionFailed') {
+          await sleep(POLL_INTERVAL_MS);
+
+          continue;
+        }
         throw new Error(`T-Cloud Public shared network is not ready: ${ condition.message || condition.reason || 'controller reconciliation failed' }`);
       }
       await sleep(POLL_INTERVAL_MS);

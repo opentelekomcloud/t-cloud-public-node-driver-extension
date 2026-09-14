@@ -1,8 +1,10 @@
 export const TCLOUD_NETWORK_TYPE = 'infrastructure.otc.t-systems.com.tcloudclusternetwork';
 export const NETWORK_ANNOTATION = 'infrastructure.otc.t-systems.com/cluster-network';
 export const NETWORK_POLICY_ANNOTATION = 'infrastructure.otc.t-systems.com/network-policy';
+export const UI_PROVIDER_ANNOTATION = 'ui.rancher/provider';
+export const TCLOUD_PROVIDER_ID = 'opentelekomcloud';
 
-export type NetworkPolicy = 'Managed' | 'Observe';
+export type NetworkPolicy = 'Managed' | 'Observe' | 'Adopt';
 
 export interface SharedNetworkContext {
   machinePools: any[];
@@ -21,16 +23,16 @@ export function setSharedNetworkContext(cluster: object, context: SharedNetworkC
   contexts.set(cluster, context);
 }
 
+export function clearSharedNetworkContext(cluster: object) {
+  contexts.delete(cluster);
+}
+
 export function getSharedNetworkContext(cluster: object): SharedNetworkContext | undefined {
   return contexts.get(cluster);
 }
 
 export function activePools(machinePools: any[]): any[] {
   return (machinePools || []).filter((entry) => !entry.remove && Number(entry.pool?.quantity || 0) > 0);
-}
-
-export function nodeCount(machinePools: any[]): number {
-  return activePools(machinePools).reduce((total, entry) => total + Number(entry.pool?.quantity || 0), 0);
 }
 
 export function networkResourceName(clusterName: string): string {
