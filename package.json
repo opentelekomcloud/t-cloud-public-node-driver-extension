@@ -1,6 +1,6 @@
 {
   "name": "opentelekomcloud",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": false,
   "description": "Rancher UI Extension for the T-Cloud Public node driver (RKE2)",
   "rancher": {
@@ -10,10 +10,10 @@
     }
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "dependencies": {
-    "@rancher/shell": "^3.0.7"
+    "@rancher/shell": "^3.0.13"
   },
   "resolutions": {
     "@types/node": "~20.10.0",
