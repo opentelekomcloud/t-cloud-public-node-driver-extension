@@ -1,11 +1,12 @@
 {
   "name": "opentelekomcloud",
   "description": "T-Cloud Public node driver extension plugin",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": false,
   "icon": "https://raw.githubusercontent.com/opentelekomcloud/opentelekomcloud-node-driver-extension/main/pkg/opentelekomcloud/assets/icon-opentelekomcloud.svg",
   "rancher": {
     "annotations": {
+      "catalog.cattle.io/display-name": "T-Cloud Public",
       "catalog.cattle.io/rancher-version": ">= 2.10.0",
       "catalog.cattle.io/ui-extensions-version": ">= 3.0.0 < 4.0.0"
     }
