@@ -3,6 +3,27 @@ entries:
   opentelekomcloud:
   - annotations:
       catalog.cattle.io/certified: rancher
+      catalog.cattle.io/display-name: T-Cloud Public
+      catalog.cattle.io/namespace: cattle-ui-plugin-system
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/permits-os: linux, windows
+      catalog.cattle.io/rancher-version: '>= 2.10.0'
+      catalog.cattle.io/scope: management
+      catalog.cattle.io/ui-component: plugins
+      catalog.cattle.io/ui-extensions-version: '>= 3.0.0 < 4.0.0'
+    apiVersion: v2
+    appVersion: 1.0.2
+    created: "2026-09-15T10:26:13.098942+02:00"
+    description: T-Cloud Public node driver extension plugin
+    digest: cf89014054d34cd8687551bf289b1f40af2e2addc5dc1951c65c37aaf54ef3ab
+    icon: https://raw.githubusercontent.com/opentelekomcloud/opentelekomcloud-node-driver-extension/main/pkg/opentelekomcloud/assets/icon-opentelekomcloud.svg
+    name: opentelekomcloud
+    type: application
+    urls:
+    - opentelekomcloud/opentelekomcloud-1.0.2.tgz
+    version: 1.0.2
+  - annotations:
+      catalog.cattle.io/certified: rancher
       catalog.cattle.io/namespace: cattle-ui-plugin-system
       catalog.cattle.io/os: linux
       catalog.cattle.io/permits-os: linux, windows
@@ -41,4 +62,4 @@ entries:
     urls:
     - opentelekomcloud/opentelekomcloud-1.0.0.tgz
     version: 1.0.0
-generated: "2026-09-14T15:16:13.943283+02:00"
+generated: "2026-09-15T10:26:13.098695+02:00"
