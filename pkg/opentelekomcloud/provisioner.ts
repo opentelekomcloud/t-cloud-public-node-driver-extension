@@ -35,6 +35,16 @@ function sameStrings(left: string[] = [], right: string[] = []): boolean {
   return sortedLeft.length === sortedRight.length && sortedLeft.every((value, index) => value === sortedRight[index]);
 }
 
+function sameSecretReference(left: any, right: { namespace: string; name: string }): boolean {
+  return left?.namespace === right.namespace && left?.name === right.name;
+}
+
+function hasProvisionedResources(resource: any): boolean {
+  const resources = resource?.status?.resources;
+
+  return !!(resources?.vpc?.id || resources?.subnet?.id || resources?.securityGroup?.id);
+}
+
 export default class TCloudProvisioner implements IClusterProvisioner {
   id = 'opentelekomcloud';
 
@@ -112,6 +122,22 @@ export default class TCloudProvisioner implements IClusterProvisioner {
       if (resource.spec?.managementPolicy !== context.policy) {
         throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
       }
+
+      let resourceChanged = false;
+      const desiredCredentialSecretRef = credentialSecretReference(context.credentialId);
+
+      if (!sameSecretReference(resource.spec?.credentialSecretRef, desiredCredentialSecretRef)) {
+        if (hasProvisionedResources(resource)) {
+          throw new Error(`The cluster network ${ id } already has provisioned resources; its cloud credential cannot be changed.`);
+        }
+
+        resource.spec.credentialSecretRef = desiredCredentialSecretRef;
+        resource.spec.region = context.region;
+        resource.spec.projectName = context.projectName;
+        resource.spec.endpointType = 'public';
+        resourceChanged = true;
+      }
+
       if (context.securityGroup.managementPolicy === 'Managed') {
         const securityGroup = resource.spec.network.securityGroup;
         const desiredCIDRs = context.securityGroup.sshAllowedCIDRs;
@@ -126,10 +152,14 @@ export default class TCloudProvisioner implements IClusterProvisioner {
           securityGroup.cni = desiredCNI;
           securityGroup.name = desiredName;
           securityGroup.managementPolicy = 'Managed';
-          resource = await resource.save();
+          resourceChanged = true;
         }
       } else if (resource.spec.network.securityGroup.managementPolicy === 'Managed') {
         throw new Error(`The cluster network ${ id } already uses a controller-managed security group; its ownership policy cannot be changed.`);
+      }
+
+      if (resourceChanged) {
+        resource = await resource.save();
       }
     }
 
