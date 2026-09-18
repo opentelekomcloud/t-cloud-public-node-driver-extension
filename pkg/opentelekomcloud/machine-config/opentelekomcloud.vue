@@ -242,7 +242,7 @@ export default {
       vpcs:                      initOptions(),
       subnets:                   initOptions(),
       availabilityZones:         initOptions(),
-      rootVolumeSize:            this.value?.rootVolumeSize || 40,
+      rootVolumeSize:            this.value?.rootVolumeSize || '40',
       rootVolumeType:            this.value?.rootVolumeType || 'SSD',
       sshUser:                   this.value?.sshUser || 'ubuntu',
       privateKeyFile:            this.value?.privateKeyFile || '',
@@ -925,7 +925,7 @@ export default {
       <div class="row mt-10">
         <div class="col span-6">
           <LabeledInput
-            v-model:value.number="rootVolumeSize"
+            v-model:value="rootVolumeSize"
             label="Root Volume Size (GB)"
             type="number"
             min="40"
