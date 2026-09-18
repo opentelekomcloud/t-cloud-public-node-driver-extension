@@ -242,6 +242,8 @@ export default {
       vpcs:                      initOptions(),
       subnets:                   initOptions(),
       availabilityZones:         initOptions(),
+      rootVolumeSize:            this.value?.rootVolumeSize || '40',
+      rootVolumeType:            this.value?.rootVolumeType || 'SSD',
       sshUser:                   this.value?.sshUser || 'ubuntu',
       privateKeyFile:            this.value?.privateKeyFile || '',
       filename:                  this.value?.privateKeyFile ? 'Private Key Provided' : '',
@@ -693,6 +695,8 @@ export default {
       this.value.secGroups = this.securityGroups.selected?.name;
       this.value.sshUser = this.sshUser;
       this.value.privateKeyFile = this.privateKeyFile;
+      this.value.rootVolumeSize = this.rootVolumeSize;
+      this.value.rootVolumeType = this.rootVolumeType;
 
       if (this.sharedNetworkRequired) {
         this.value.networkScope = 'shared';
@@ -914,6 +918,29 @@ export default {
             :options="images.options"
             :disabled="!images.enabled || busy"
             :loading="images.busy"
+            :searchable="false"
+          />
+        </div>
+      </div>
+      <div class="row mt-10">
+        <div class="col span-6">
+          <LabeledInput
+            v-model:value="rootVolumeSize"
+            label="Root Volume Size (GB)"
+            type="number"
+            min="40"
+            :mode="mode"
+            :disabled="busy"
+            :required="true"
+          />
+        </div>
+
+        <div class="col span-6">
+          <LabeledSelect
+            v-model:value="rootVolumeType"
+            label="Root Volume Type"
+            :options="['SSD', 'ESSD', 'GPSSD2', 'GPSSD', 'SAS']"
+            :disabled="busy"
             :searchable="false"
           />
         </div>

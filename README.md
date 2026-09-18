@@ -46,6 +46,14 @@ The installed docker-machine driver must support `networkScope=shared` and
 `skipDefaultSg=true`. In that scope the driver must not delete the shared VPC,
 subnet, or security group; cleanup belongs exclusively to the controller.
 
+## With Rancher
+
+For a single end-to-end walkthrough covering T-Cloud Public driver, the
+[T-Cloud Public Rancher UI extension](https://github.com/opentelekomcloud/t-cloud-public-node-driver-extension),
+and the
+[T-Cloud Public Rancher network controller](https://github.com/opentelekomcloud/t-cloud-public-rancher-network-controller)
+together - including screenshots - see
+[RANCHER-GETTING-STARTED.md](RANCHER-GETTING-STARTED.md).
 ---
 
 ## Building and running locally
