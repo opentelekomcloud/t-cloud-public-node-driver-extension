@@ -45,6 +45,17 @@ function hasProvisionedResources(resource: any): boolean {
   return !!(resources?.vpc?.id || resources?.subnet?.id || resources?.securityGroup?.id);
 }
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  return 'unknown error';
+}
+
 export default class TCloudProvisioner implements IClusterProvisioner {
   id = 'opentelekomcloud';
 
@@ -102,6 +113,7 @@ export default class TCloudProvisioner implements IClusterProvisioner {
     const name = annotations[NETWORK_ANNOTATION] || networkResourceName(clusterName);
     const id = `${ namespace }/${ name }`;
     let resource;
+    let createdForThisSave = false;
 
     try {
       resource = await this.dispatch('management/find', {
@@ -118,6 +130,7 @@ export default class TCloudProvisioner implements IClusterProvisioner {
     if (!resource) {
       resource = await this.dispatch('management/create', this.networkResource(cluster, name, namespace, context));
       resource = await resource.save();
+      createdForThisSave = true;
     } else {
       if (resource.spec?.managementPolicy !== context.policy) {
         throw new Error(`The cluster network ${ id } already uses ${ resource.spec?.managementPolicy }; its ownership policy cannot be changed.`);
@@ -166,9 +179,27 @@ export default class TCloudProvisioner implements IClusterProvisioner {
     annotations[NETWORK_ANNOTATION] = name;
     annotations[NETWORK_POLICY_ANNOTATION] = context.policy;
 
-    const ready = await this.waitUntilReady(id);
+    try {
+      const ready = await this.waitUntilReady(id);
 
-    this.applyNetworkToPools(context.machinePools, ready);
+      this.applyNetworkToPools(context.machinePools, ready);
+    } catch (error) {
+      if (createdForThisSave) {
+        await this.rollbackCreatedNetwork(resource, id, error);
+      }
+
+      throw error;
+    }
+  }
+
+  private async rollbackCreatedNetwork(resource: any, id: string, originalError: unknown): Promise<never> {
+    try {
+      await resource.remove();
+    } catch (rollbackError) {
+      throw new Error(`${ errorMessage(originalError) } Rollback of the newly created cluster network ${ id } also failed: ${ errorMessage(rollbackError) }`);
+    }
+
+    throw originalError;
   }
 
   private networkResource(cluster: any, name: string, namespace: string, context: any): any {
