@@ -1,6 +1,6 @@
 {
   "name": "opentelekomcloud",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": false,
   "description": "Rancher UI Extension for the T-Cloud Public node driver (RKE2)",
   "rancher": {
@@ -27,6 +27,7 @@
     "serve-pkgs": "./node_modules/@rancher/shell/scripts/serve-pkgs",
     "publish-pkgs": "./node_modules/@rancher/shell/scripts/extension/publish",
     "parse-tag-name": "./node_modules/@rancher/shell/scripts/extension/parse-tag-name",
+    "test:unit": "jest --config jest.config.js --runInBand",
     "lint": "eslint --ext .js,.ts,.vue pkg",
     "lint:fix": "eslint --ext .js,.ts,.vue pkg --fix"
   },
